@@ -13,10 +13,17 @@ const port = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, Postman) or from allowed origins or chrome extensions
-    if (!origin || origin.startsWith('http://localhost') || origin.startsWith('chrome-extension://')) {
+    // Allow requests with no origin (like mobile apps, curl, Postman) or from allowed origins
+    const allowedOrigins = [
+      'http://localhost',
+      'https://console.cloud.google.com',  // Chrome extension runs in this context
+      'chrome-extension://'
+    ];
+    
+    if (!origin || allowedOrigins.some(allowed => origin.startsWith(allowed))) {
       callback(null, true);
     } else {
+      console.warn(`CORS blocked origin: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },

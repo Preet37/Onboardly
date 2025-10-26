@@ -351,11 +351,17 @@ function displayGuidance(guidance, analysis) {
       sendTrackingEvent('step_completed', window.location.href, currentStep - 1);
     }, 3000);
   } else if (status === 'correct' && currentStep === totalSteps) {
-    // Training completed!
+    // Training completed! STATE FLIP 1→0
     setTimeout(() => {
+      // Send completion event (flips state from 1→0)
       sendTrackingEvent('training_completed', window.location.href, currentStep);
+      
+      // Stop monitoring
+      stopMonitoring();
+      
+      // Update UI to show completion
       updateStatus('success', '🎉 Training Complete!');
-      updateContent('<div class="guidance-message"><h3>🎉 Congratulations!</h3><p>You\'ve completed all onboarding tasks!</p></div>');
+      updateContent('<div class="guidance-message"><h3>🎉 Congratulations!</h3><p>You\'ve completed all onboarding tasks!</p><p style="margin-top: 16px;">The AI Coach has stopped monitoring. You can close this panel.</p></div>');
     }, 3000);
   }
 }

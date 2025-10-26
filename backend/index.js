@@ -143,7 +143,9 @@ app.post('/onboard', async (req, res) => {
       internEmail: intern.email,
       internName: intern.name,
       websiteConfig: generateWebsiteConfig(workflow),
-      extensionActivated: false,
+      extensionActivated: false, // State: 0 (not started)
+      trainingInProgress: false, // State: 0 (not in progress)
+      trainingCompleted: false,  // State: 0 (not completed)
       createdAt: new Date()
     });
     
@@ -779,28 +781,58 @@ app.post('/track/extension-usage', async (req, res) => {
     timestamp: timestamp || new Date()
   });
   
-  // If this is the FIRST extension usage, mark as activated
+  // STATE FLIP 0→1: Extension activated (training started)
   if (!tracking.extensionActivated && event === 'extension_activated') {
-    tracking.extensionActivated = true;
+    tracking.extensionActivated = true; // Flip to 1
     tracking.firstActivationAt = new Date();
+    tracking.trainingInProgress = true; // Training in progress
     
     const session = activeSessions.get(internEmail);
     if (session && session.sendProgress) {
+      // Mark "opened" as completed
       session.sendProgress('opened', 'completed', {
-        message: `${tracking.internName} is using the AI Coach!`,
+        message: `${tracking.internName} opened the AI Coach!`,
         extensionActivated: true
       });
-    }
-  }
-  
-  // Track when training is completed
-  if (event === 'training_completed') {
-    const session = activeSessions.get(internEmail);
-    if (session && session.sendProgress) {
-      session.sendProgress('onboarded', 'completed', {
-        message: `${tracking.internName} completed onboarding!`
+      
+      // Start "onboarding" phase (training in progress)
+      session.sendProgress('onboarding', 'running', {
+        message: `${tracking.internName} is completing onboarding tasks...`,
+        trainingInProgress: true
       });
     }
+    
+    console.log(`✅ Training STARTED for ${internEmail} (0→1)`);
+  }
+  
+  // STATE FLIP 1→0: Training completed (all tasks done)
+  if (event === 'training_completed') {
+    tracking.trainingInProgress = false; // Flip to 0
+    tracking.trainingCompleted = true;   // Mark as completed
+    tracking.trainingCompletedAt = new Date();
+    
+    const session = activeSessions.get(internEmail);
+    if (session && session.sendProgress) {
+      session.sendProgress('onboarding', 'completed', {
+        message: `${tracking.internName} completed all onboarding tasks!`,
+        trainingCompleted: true
+      });
+      
+      // Mark as fully onboarded
+      session.sendProgress('onboarded', 'completed', {
+        message: `${tracking.internName} is now fully onboarded! 🎉`
+      });
+      
+      // Close the SSE stream
+      setTimeout(() => {
+        if (session.res) {
+          session.res.end();
+        }
+        activeSessions.delete(internEmail);
+      }, 1000);
+    }
+    
+    console.log(`✅ Training COMPLETED for ${internEmail} (1→0)`);
   }
   
   res.json({ success: true, tracked: true });
@@ -822,6 +854,32 @@ app.get('/extension/config/:internEmail', async (req, res) => {
     success: true,
     internName: tracking.internName,
     config: tracking.websiteConfig
+  });
+});
+
+// Get current training state for an intern
+app.get('/extension/state/:internEmail', async (req, res) => {
+  const { internEmail } = req.params;
+  
+  const tracking = usageTracking.get(internEmail);
+  
+  if (!tracking) {
+    return res.status(404).json({ 
+      error: 'No tracking data found for this intern' 
+    });
+  }
+  
+  res.json({
+    success: true,
+    internEmail: tracking.internEmail,
+    internName: tracking.internName,
+    state: {
+      extensionActivated: tracking.extensionActivated,       // 0 or 1
+      trainingInProgress: tracking.trainingInProgress,       // 0 or 1
+      trainingCompleted: tracking.trainingCompleted,         // 0 or 1
+      firstActivationAt: tracking.firstActivationAt,
+      trainingCompletedAt: tracking.trainingCompletedAt
+    }
   });
 });
 

@@ -12,7 +12,9 @@
       "Read(//private/tmp/**)",
       "Bash(lsof:*)",
       "Bash(pip install:*)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "Bash(npm run dev:*)",
+      "Bash(node index.js:*)"
     ],
     "deny": [],
     "ask": []

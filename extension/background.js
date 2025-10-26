@@ -1,4 +1,4 @@
-/**
+m/**
  * AI Onboarding Coach - Background Service Worker
  * Handles screenshot capture
  */

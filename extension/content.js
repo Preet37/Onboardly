@@ -4,6 +4,7 @@
  */
 
 const API_URL = 'http://localhost:5001';
+const ONBOARDING_API_URL = 'http://localhost:3000';
 const CAPTURE_INTERVAL = 5000; // 5 seconds
 const TASK_TYPE = 'gcp_storage';
 
@@ -13,8 +14,9 @@ let captureIntervalId = null;
 let coachPanel = null;
 let lastScreenshotHash = null; // Track if screen has changed
 let mousePosition = { x: 0, y: 0 }; // Track mouse position
-
-// Initialize when page loads (minimal logging)
+let internEmail = null; // Intern's email for tracking
+let websiteConfig = null; // Dynamic configuration from backend
+let currentWebsiteTasks = []; // Tasks for current website
 
 // Wait for page to be ready
 if (document.readyState === 'loading') {
@@ -23,7 +25,36 @@ if (document.readyState === 'loading') {
   initialize();
 }
 
-function initialize() {
+async function initialize() {
+  // Get intern email from URL parameter or storage
+  const urlParams = new URLSearchParams(window.location.search);
+  internEmail = urlParams.get('email') || localStorage.getItem('onboardly_intern_email');
+  
+  if (!internEmail) {
+    // Try to get from Chrome storage
+    try {
+      const result = await chrome.storage.local.get(['internEmail']);
+      internEmail = result.internEmail;
+    } catch (e) {
+      // No email found
+    }
+  }
+  
+  if (internEmail) {
+    localStorage.setItem('onboardly_intern_email', internEmail);
+    try {
+      await chrome.storage.local.set({ internEmail });
+    } catch (e) {
+      // Ignore storage errors
+    }
+    
+    // Load configuration from backend
+    await loadExtensionConfig();
+    
+    // Send tracking event: extension activated
+    sendTrackingEvent('extension_activated', window.location.href, currentStep);
+  }
+
   createCoachPanel();
   startMonitoring();
   trackMousePosition();
@@ -246,6 +277,13 @@ function getOverallGoal() {
  * Get current step description
  */
 function getCurrentStepDescription() {
+  // If we have website-specific tasks, use those
+  if (currentWebsiteTasks && currentWebsiteTasks.length > 0) {
+    const task = currentWebsiteTasks[currentStep - 1];
+    return task ? task.description : "Unknown step";
+  }
+  
+  // Fallback to default steps
   const steps = [
     "Navigate to Cloud Storage in GCP Console",
     "Click 'Create Bucket' button",
@@ -282,13 +320,15 @@ function displayGuidance(guidance, analysis) {
 
   updateStatus(status, label, color);
 
+  const totalSteps = currentWebsiteTasks.length || 7;
+
   let content = `
     <div class="guidance-overall-goal">
       <h3>🏆 Overall Goal:</h3>
       <p><strong>${getOverallGoal()}</strong></p>
     </div>
     <div class="guidance-current-goal">
-      <h3>🎯 Current Step (${currentStep}/7):</h3>
+      <h3>🎯 Current Step (${currentStep}/${totalSteps}):</h3>
       <p><strong>${getCurrentStepDescription()}</strong></p>
     </div>
     <div class="guidance-message">
@@ -300,12 +340,22 @@ function displayGuidance(guidance, analysis) {
   updateContent(content);
 
   // Auto-advance step ONLY if the action was actually completed
-  if (status === 'correct' && currentStep < 7) {
+  if (status === 'correct' && currentStep < totalSteps) {
     setTimeout(() => {
       currentStep++;
       document.getElementById('current-step').textContent = currentStep;
       lastScreenshotHash = null; // Reset hash to force analysis on new step
       updateStatus('active', 'Monitoring');
+      
+      // Send tracking event
+      sendTrackingEvent('step_completed', window.location.href, currentStep - 1);
+    }, 3000);
+  } else if (status === 'correct' && currentStep === totalSteps) {
+    // Training completed!
+    setTimeout(() => {
+      sendTrackingEvent('training_completed', window.location.href, currentStep);
+      updateStatus('success', '🎉 Training Complete!');
+      updateContent('<div class="guidance-message"><h3>🎉 Congratulations!</h3><p>You\'ve completed all onboarding tasks!</p></div>');
     }, 3000);
   }
 }
@@ -333,6 +383,57 @@ function updateStatus(status, text, color) {
 function updateContent(html) {
   const content = document.getElementById('coach-content');
   content.innerHTML = html;
+}
+
+/**
+ * Load extension configuration from backend
+ */
+async function loadExtensionConfig() {
+  if (!internEmail) return;
+  
+  try {
+    const response = await fetch(`${ONBOARDING_API_URL}/extension/config/${encodeURIComponent(internEmail)}`);
+    const data = await response.json();
+    
+    if (data.success && data.config) {
+      websiteConfig = data.config;
+      
+      // Find tasks for current website
+      const currentUrl = window.location.href;
+      for (const [pattern, tasks] of Object.entries(websiteConfig)) {
+        const regex = new RegExp(pattern.replace(/\*/g, '.*'));
+        if (regex.test(currentUrl)) {
+          currentWebsiteTasks = tasks;
+          break;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load extension config:', error);
+  }
+}
+
+/**
+ * Send tracking event to backend
+ */
+async function sendTrackingEvent(event, website, step) {
+  if (!internEmail) return;
+  
+  try {
+    await fetch(`${ONBOARDING_API_URL}/track/extension-usage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        internEmail,
+        event,
+        website,
+        step,
+        timestamp: new Date().toISOString()
+      })
+    });
+  } catch (error) {
+    console.error('Failed to send tracking event:', error);
+  }
 }
 
 // Listen for messages from background script

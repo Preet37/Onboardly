@@ -1,0 +1,87 @@
+{
+  "summary": "Found 42 restaurants near Berkeley with real-time ETA and weather conditions",
+  "results": [
+    { "name": "Chez Panisse", "rating": 4.8, "eta_min": 12, "weather": "Clear" },
+    { "name": "Gather", "rating": 4.6, "eta_min": 8, "weather": "Clear" },
+    { "name": "Imm Thai", "rating": 4.7, "eta_min": 15, "weather": "Clear" }
+  ],
+  "correlation": {
+    "data": [
+      { "rating": 4.8, "eta": 12 },
+      { "rating": 4.6, "eta": 8 },
+      { "rating": 4.7, "eta": 15 },
+      { "rating": 4.5, "eta": 10 },
+      { "rating": 4.9, "eta": 18 },
+      { "rating": 4.4, "eta": 7 }
+    ]
+  },
+  "pipeline_spec": {
+    "nodes": [
+      {
+        "id": "n1_yelp",
+        "type": "http",
+        "name": "Yelp Search",
+        "color": "#ffb347",
+        "latency_ms": 245
+      },
+      {
+        "id": "n2_osrm",
+        "type": "http",
+        "name": "OSRM ETA",
+        "color": "#47b2ff",
+        "latency_ms": 387
+      },
+      {
+        "id": "n3_weather",
+        "type": "http",
+        "name": "Open-Meteo Weather",
+        "color": "#00ff88",
+        "latency_ms": 156
+      },
+      {
+        "id": "t1_join",
+        "type": "transform",
+        "name": "Join on Coordinates",
+        "color": "#d547ff",
+        "latency_ms": 12
+      },
+      {
+        "id": "t2_rank",
+        "type": "transform",
+        "name": "Rank by Score",
+        "color": "#ff47d5",
+        "latency_ms": 8
+      }
+    ],
+    "edges": [
+      { "from": "n1_yelp", "to": "t1_join", "status": "completed" },
+      { "from": "n2_osrm", "to": "t1_join", "status": "completed" },
+      { "from": "n3_weather", "to": "t1_join", "status": "completed" },
+      { "from": "t1_join", "to": "t2_rank", "status": "completed" }
+    ]
+  },
+  "log": [
+    "[00:00.000] AI Planner initialized",
+    "[00:00.123] Analyzing user query: 'restaurants near Berkeley'",
+    "[00:00.456] Planner selected APIs: Yelp, OSRM, Open-Meteo",
+    "[00:00.789] Executing 3 parallel API calls...",
+    "[00:01.234] ✓ Yelp Search completed (245ms)",
+    "[00:01.456] ✓ Open-Meteo Weather completed (156ms)",
+    "[00:01.876] ✓ OSRM ETA completed (387ms)",
+    "[00:02.012] Joining results on coordinates...",
+    "[00:02.234] Ranking by composite score...",
+    "[00:02.567] ✓ Pipeline completed successfully",
+    "[00:02.890] Returning 42 results to client"
+  ],
+  "health": {
+    "run_time_sec": 3.9,
+    "avg_latency_ms": 337,
+    "fail_rate_24h": 0.03,
+    "auto_reroutes": 1,
+    "recommendations": [
+      "Batch ETA calls to reduce OSRM latency",
+      "Consider caching weather data for 15min",
+      "Yelp API shows 99.7% uptime - excellent"
+    ]
+  }
+}

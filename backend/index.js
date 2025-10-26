@@ -964,20 +964,25 @@ PROOF REQUIREMENTS - BE SPECIFIC:
   * "PROOF: The main dashboard is visible with metrics, charts, and key information displayed"
 
 SPECIAL CASE - OBSERVATION/EXPLORATION STEPS:
-- For steps like "Scan", "Take note of", "Observe", "Review", "Explore", "Examine":
+- For steps like "Scan", "Take note of", "Observe", "Review", "Explore", "Examine", "Find":
   * Mark complete if the user is VIEWING or INTERACTING with the correct page/section
   * User can click around, expand items, or just view - all count as completion
   * BE LENIENT - if the step says "Explore A, B, C, and D", mark complete if they visit ANY of them
+  * BE LENIENT - if the step says "e.g." or "for example", accept ANY similar resource/item
   * Examples of lenient completion:
     - Step: "Explore Compute, Storage, Networking, IAM" → Mark complete if they visit ANY of these sections
+    - Step: "Find a resource (e.g., a VM instance)" → Accept ANY resource (VM, bucket, database, etc.)
     - Step: "Review the dashboard metrics" → Mark complete if they're viewing the dashboard
     - Step: "Take note of menu options" → Mark complete if menu is visible
+    - Step: "Click on a service (e.g., Cloud Run)" → Accept ANY service they click
   * PROOF: Describe what page elements, data, or information you can see
   * Examples:
     - "PROOF: User is on IAM & Admin page, exploring one of the required sections"
-    - "PROOF: User is on Cloud Storage page, which is part of the Storage section to explore"
+    - "PROOF: User clicked on a Cloud Storage bucket, which is a valid resource"
+    - "PROOF: User is viewing a Cloud SQL instance details, which counts as finding a resource"
     - "PROOF: User is on Compute Engine, which is part of the Compute section to explore"
   * These steps are about AWARENESS and EXPLORATION, not completing every single item - be generous!
+  * When you see "e.g." or "for example", treat it as a SUGGESTION, not a requirement
 
 DO NOT MARK COMPLETE WITHOUT PROOF:
 - Just navigating to a page (must see the page fully loaded with specific UI elements)

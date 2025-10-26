@@ -18,7 +18,8 @@
       "Bash(xargs kill:*)",
       "Bash(node:*)",
       "Bash(python3:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Add AI-powered Chrome extension with Gemini vision analysis\n\n- Implement Chrome extension with real-time AI coaching using Gemini 2.5 Flash\n- Add screenshot capture and vision-based task validation\n- Create inject-panel UI with persistent AI feedback and step tracking\n- Integrate Gemini vision API for analyzing user actions and cursor position\n- Add extension activation flow with email parameter extraction from URL\n- Implement tracking events for extension_activated and training_completed\n- Add SSE progress updates for workflow node visualization\n- Remove deprecated Python backend and old content scripts\n- Add separate AI feedback area to prevent message replacement\n- Include click-aware AI prompts for immediate action feedback\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []

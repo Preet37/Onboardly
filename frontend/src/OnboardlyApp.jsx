@@ -1,8 +1,8 @@
-// src/TaskOrbitApp.jsx - Finalized UI Logic (Full File)
+// src/OnboardlyApp.jsx - Finalized UI Logic (Full File)
 
 import React, { useEffect, useState } from 'react';
 // Corrected import path (now possible because pipelineStream.js exists)
-// In src/TaskOrbitApp.jsx:
+// In src/OnboardlyApp.jsx:
 import { startPipelineRun } from "./services/pipelineStream"; // Remove the .js extension and let Vite figure it out
 import PipelineFlow from './components/PipelineFlow'; 
 import NeuralCosmos from './components/NeuralCosmos';
@@ -19,7 +19,7 @@ const INITIAL_DATA = {
   correlation: { x: '', y: '', pearson_r: 0, n: 0 }
 };
 
-export default function TaskOrbitApp() {
+export default function OnboardlyApp() {
     // --- Core State ---
     const [data, setData] = useState(INITIAL_DATA);
     const [loading, setLoading] = useState(false);

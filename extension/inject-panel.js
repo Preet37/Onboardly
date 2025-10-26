@@ -25,11 +25,8 @@ panel.style.cssText = `
 
 panel.innerHTML = `
   <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; border-radius: 8px 8px 0 0;">
-    <span style="font-weight: 600; font-size: 14px;">🤖 AI Coach</span>
-    <div style="display: flex; align-items: center; gap: 12px;">
-      <span style="font-size: 12px; opacity: 0.95;">Step <span id="step-counter">1</span>/7</span>
-      <button id="minimize-btn" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 20px; height: 20px; border-radius: 3px; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center;">−</button>
-    </div>
+    <span style="font-weight: 600; font-size: 14px;">🤖 Onboardly AI Coach</span>
+    <button id="minimize-btn" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 20px; height: 20px; border-radius: 3px; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center;">−</button>
   </div>
   <div id="panel-body" style="padding: 16px; flex: 1; overflow-y: auto; background: #fafafa;">
     <div style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 14px; border-radius: 6px; margin-bottom: 12px; border-left: 4px solid #2196F3;">
@@ -39,7 +36,7 @@ panel.innerHTML = `
       </div>
     </div>
     <div style="background: white; padding: 14px; border-radius: 6px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-      <div style="font-weight: 600; color: #333; margin-bottom: 8px; font-size: 13px;">📝 Current Task (Step <span id="current-step-num">1</span>)</div>
+      <div style="font-weight: 600; color: #333; margin-bottom: 8px; font-size: 13px;">📝 Current Task</div>
       <div id="task-description" style="color: #666; line-height: 1.5; font-size: 13px; margin-bottom: 12px;">
         Click on the hamburger menu (☰) in the top-left corner
       </div>
@@ -71,6 +68,7 @@ let actionHistory = [];
 let lastScreenshotHash = null;
 let analysisInProgress = false;
 let internEmail = null; // Will be loaded from storage
+let tasks = []; // Will be loaded dynamically from backend
 
 // Extract email from URL or storage and send activation event
 function initializeInternEmail() {
@@ -86,6 +84,9 @@ function initializeInternEmail() {
 
       // Send extension activated event to backend
       sendTrackingEvent('extension_activated', 1);
+
+      // Load tasks from backend
+      loadTasksFromBackend();
     });
   } else {
     // Fall back to storage
@@ -96,11 +97,120 @@ function initializeInternEmail() {
 
         // Send extension activated event (in case of page reload)
         sendTrackingEvent('extension_activated', 1);
+
+        // Load tasks from backend
+        loadTasksFromBackend();
       } else {
         console.warn('⚠️ No intern email found in URL or storage');
         console.warn('⚠️ Extension will not send tracking events');
+        // Show error in UI
+        showLoadingError('No intern email found. Please use the activation link from your email.');
       }
     });
+  }
+}
+
+// Track if tasks have been loaded to prevent reloading mid-session
+let tasksLoaded = false;
+
+// Load tasks dynamically from backend
+async function loadTasksFromBackend() {
+  console.log('🔍 loadTasksFromBackend() called');
+  console.trace('Call stack:'); // Show where this was called from
+  
+  if (!internEmail) {
+    console.error('❌ Cannot load tasks: no intern email');
+    return;
+  }
+  
+  // Prevent reloading tasks if user has already started
+  if (tasksLoaded && tasks.length > 0) {
+    console.group('🚫 BLOCKING Task Reload');
+    console.warn('Tasks already loaded - skipping reload to prevent data loss');
+    console.warn('tasksLoaded:', tasksLoaded);
+    console.warn('tasks.length:', tasks.length);
+    console.warn('Current tasks:', tasks);
+    console.groupEnd();
+    return;
+  }
+  
+  console.log('✅ Proceeding with task load (first time)');
+
+  // Extract current platform from URL
+  const platform = window.location.hostname;
+  console.log(`📋 Loading tasks for platform: ${platform}`);
+
+  try {
+    const response = await fetch(`http://localhost:3000/extension/tasks/${encodeURIComponent(internEmail)}/${encodeURIComponent(platform)}`);
+
+    if (!response.ok) {
+      throw new Error(`Failed to load tasks: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log(`✅ Loaded ${data.tasks.length} tasks from backend`);
+
+    // Update tasks array with sub-instructions
+    console.group('📥 Loading Tasks from Backend');
+    console.log(`Received ${data.tasks.length} tasks`);
+    data.tasks.forEach((task, i) => {
+      console.log(`Task ${i + 1}: "${task.name}" - ${task.subInstructions?.length || 0} sub-instructions`);
+    });
+    console.groupEnd();
+    
+    tasks = data.tasks.map(task => ({
+      text: task.text,
+      name: task.name,
+      subInstructions: task.subInstructions || [],
+      estimatedDuration: task.estimatedDuration,
+      validate: (e) => {
+        // Generic validation - AI will do the real validation
+        return true;
+      }
+    }));
+    
+    console.log('✅ Tasks array updated:', tasks);
+    
+    // Mark tasks as loaded
+    tasksLoaded = true;
+
+    // Update overall goal from task names
+    const goalText = data.tasks.map(t => t.name).join(', ');
+    const goalDiv = document.querySelector('#panel-body > div:first-child > div:last-child');
+    if (goalDiv) {
+      goalDiv.textContent = `Complete ${data.tasks.length} tasks: ${goalText}`;
+    }
+
+    // Step counter removed for cleaner UI
+
+    // Update current task with sub-instructions
+    updateCurrentTaskDisplay();
+
+    // Update steps list
+    updateStepsList();
+
+    console.log('✅ UI updated with dynamic tasks');
+  } catch (error) {
+    console.error('❌ Failed to load tasks from backend:', error);
+    showLoadingError(`Failed to load tasks: ${error.message}`);
+  }
+}
+
+// Show error in UI
+function showLoadingError(message) {
+  const taskDesc = document.getElementById('task-description');
+  const aiFeedback = document.getElementById('ai-feedback');
+
+  if (taskDesc) {
+    taskDesc.textContent = message;
+  }
+
+  if (aiFeedback) {
+    aiFeedback.textContent = '⚠️ ' + message;
+    aiFeedback.style.display = 'block';
+    aiFeedback.style.background = '#fff3cd';
+    aiFeedback.style.borderLeft = '3px solid #ff9800';
+    aiFeedback.style.color = '#856404';
   }
 }
 
@@ -164,92 +274,112 @@ function logAction(action, details) {
   }
 }
 
-const tasks = [
-  { 
-    text: 'Click on the hamburger menu (☰) in the top-left corner',
-    validate: (e) => {
-      // Check if clicked on navigation menu button
-      const target = e.target.closest('button, [role="button"], mat-icon');
-      return target && (
-        target.textContent.includes('menu') || 
-        target.getAttribute('aria-label')?.toLowerCase().includes('menu') ||
-        target.className?.toLowerCase().includes('menu')
-      );
-    }
-  },
-  { 
-    text: 'Navigate to "IAM & Admin" in the menu',
-    validate: (e) => {
-      const text = e.target.textContent?.toLowerCase() || '';
-      return text.includes('iam') || text.includes('admin');
-    }
-  },
-  { 
-    text: 'Click on "Service Accounts"',
-    validate: (e) => {
-      const text = e.target.textContent?.toLowerCase() || '';
-      return text.includes('service') && text.includes('account');
-    }
-  },
-  { 
-    text: 'Navigate to "APIs & Services"',
-    validate: (e) => {
-      const text = e.target.textContent?.toLowerCase() || '';
-      return text.includes('api') || text.includes('service');
-    }
-  },
-  { 
-    text: 'Click on "Library" or "Dashboard"',
-    validate: (e) => {
-      const text = e.target.textContent?.toLowerCase() || '';
-      return text.includes('library') || text.includes('dashboard');
-    }
-  },
-  { 
-    text: 'Explore the page - click on any card or button',
-    validate: (e) => {
-      return e.target.closest('button, a, mat-card, [role="button"]') !== null;
-    }
-  },
-  { 
-    text: 'Return to the main console',
-    validate: (e) => {
-      const text = e.target.textContent?.toLowerCase() || '';
-      return text.includes('home') || text.includes('console') || text.includes('dashboard');
-    }
-  }
-];
+// Update current task display with sub-instructions
+function updateCurrentTaskDisplay() {
+  const taskDesc = document.getElementById('task-description');
+  if (!taskDesc || tasks.length === 0) return;
 
-// Populate steps list
+  const currentTask = tasks[stepCount - 1];
+  if (!currentTask) return;
+
+  // Build HTML with main task goal and sub-instructions
+  let html = `<div style="margin-bottom: 10px;">
+    <strong style="color: #1976d2;">${currentTask.name || currentTask.text}</strong>
+  </div>`;
+
+  if (currentTask.subInstructions && currentTask.subInstructions.length > 0) {
+    html += `<div style="color: #666; font-size: 12px; margin-bottom: 8px;">Follow these steps:</div>`;
+    html += `<ol style="margin: 0; padding-left: 20px; line-height: 1.8; color: #444;">`;
+    currentTask.subInstructions.forEach((instruction, index) => {
+      html += `<li style="margin-bottom: 4px;">${instruction}</li>`;
+    });
+    html += `</ol>`;
+  } else {
+    html += `<div style="color: #666; line-height: 1.5;">${currentTask.text}</div>`;
+  }
+
+  taskDesc.innerHTML = html;
+}
+
+// Track completed sub-instructions
+let completedSubInstructions = new Set();
+
+// Populate steps list - show sub-instructions as numbered steps
 function updateStepsList() {
   const stepsList = document.getElementById('steps-list');
   if (!stepsList) return;
-  
-  stepsList.innerHTML = tasks.map((task, index) => {
+
+  // Handle empty tasks array
+  if (tasks.length === 0) {
+    stepsList.innerHTML = '<div style="color: #999; font-size: 12px;">Loading tasks...</div>';
+    return;
+  }
+
+  // Get current task and its sub-instructions
+  const currentTask = tasks[stepCount - 1];
+  if (!currentTask || !currentTask.subInstructions || currentTask.subInstructions.length === 0) {
+    console.warn('⚠️ Task has no sub-instructions! This will cause immediate completion.');
+    console.warn('Task:', currentTask);
+    console.warn('This is a backend issue - the AI did not generate sub-instructions.');
+    
+    // Fallback to showing main tasks if no sub-instructions
+    stepsList.innerHTML = tasks.map((task, index) => {
+      const stepNum = index + 1;
+      const isComplete = stepNum < stepCount;
+      const isCurrent = stepNum === stepCount;
+
+      let icon = '⭕';
+      let color = '#999';
+      let bgColor = 'transparent';
+
+      if (isComplete) {
+        icon = '✅';
+        color = '#4CAF50';
+        bgColor = '#e8f5e9';
+      } else if (isCurrent) {
+        icon = '▶️';
+        color = '#2196F3';
+        bgColor = '#e3f2fd';
+      }
+
+      return `
+        <div style="padding: 8px; margin-bottom: 4px; border-radius: 4px; background: ${bgColor}; display: flex; align-items: start; gap: 8px;">
+          <span style="flex-shrink: 0;">${icon}</span>
+          <div style="flex: 1;">
+            <div style="font-weight: ${isCurrent ? '600' : '400'}; color: ${color};">
+              ${stepNum}. ${task.name || task.text}
+            </div>
+            ${task.estimatedDuration ? `<div style="font-size: 10px; color: #999; margin-top: 2px;">⏱️ ${task.estimatedDuration}</div>` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+    return;
+  }
+
+  // Show sub-instructions as numbered steps
+  stepsList.innerHTML = currentTask.subInstructions.map((instruction, index) => {
     const stepNum = index + 1;
-    const isComplete = stepNum < stepCount;
-    const isCurrent = stepNum === stepCount;
-    
+    const isComplete = completedSubInstructions.has(stepNum);
+
     let icon = '⭕';
-    let color = '#999';
+    let color = '#666';
     let bgColor = 'transparent';
-    
+    let textDecoration = 'none';
+
     if (isComplete) {
       icon = '✅';
       color = '#4CAF50';
       bgColor = '#e8f5e9';
-    } else if (isCurrent) {
-      icon = '▶️';
-      color = '#2196F3';
-      bgColor = '#e3f2fd';
+      textDecoration = 'line-through';
     }
-    
+
     return `
-      <div style="padding: 8px; margin-bottom: 4px; border-radius: 4px; background: ${bgColor}; display: flex; align-items: start; gap: 8px;">
-        <span style="flex-shrink: 0;">${icon}</span>
+      <div id="sub-step-${stepNum}" style="padding: 10px; margin-bottom: 6px; border-radius: 4px; background: ${bgColor}; display: flex; align-items: start; gap: 10px; transition: all 0.3s ease;">
+        <span style="flex-shrink: 0; font-size: 16px;">${icon}</span>
         <div style="flex: 1;">
-          <div style="font-weight: ${isCurrent ? '600' : '400'}; color: ${color};">
-            ${stepNum}. ${task.text}
+          <div style="font-weight: 500; color: ${color}; line-height: 1.5; text-decoration: ${textDecoration};">
+            ${stepNum}. ${instruction}
           </div>
         </div>
       </div>
@@ -257,6 +387,7 @@ function updateStepsList() {
   }).join('');
 }
 
+// Show loading state initially
 updateStepsList();
 
 // Minimize button
@@ -282,8 +413,14 @@ setInterval(() => {
   }
 }, 500);
 
+// Track last analysis time to prevent too-frequent calls
+let lastAnalysisTime = 0;
+const MIN_ANALYSIS_INTERVAL = 1000; // Minimum 1 second between analyses
+let pendingAnalysisTimeout = null; // Track pending analysis to cancel duplicates
+
 document.addEventListener('click', (e) => {
-  if (e.target.closest('#ai-coach-panel')) return;
+  // Check if target is an element and if it's inside the panel
+  if (e.target && e.target.nodeType === Node.ELEMENT_NODE && e.target.closest('#ai-coach-panel')) return;
 
   const clickedText = e.target.textContent?.substring(0, 50) || e.target.tagName;
   logAction('click', `Clicked: ${clickedText}`);
@@ -294,44 +431,87 @@ document.addEventListener('click', (e) => {
     status.textContent = '🎯 Analyzing your click...';
   }
 
-  // Force immediate AI analysis on click
+  // Force immediate AI analysis on click (but respect minimum interval)
+  const now = Date.now();
+  if (now - lastAnalysisTime < MIN_ANALYSIS_INTERVAL) {
+    console.log('⏱️ Click too soon after last analysis - ignoring');
+    if (status) {
+      status.textContent = '⏱️ Please wait before clicking again...';
+    }
+    return;
+  }
+
+  // Cancel any pending analysis from previous click
+  if (pendingAnalysisTimeout) {
+    console.log('🚫 Canceling previous pending analysis');
+    clearTimeout(pendingAnalysisTimeout);
+    pendingAnalysisTimeout = null;
+  }
+
   lastScreenshotHash = null;
   analysisInProgress = false; // Reset the flag to allow immediate analysis
 
   // Delay slightly to let the UI update after the click
-  setTimeout(() => {
+  pendingAnalysisTimeout = setTimeout(() => {
+    pendingAnalysisTimeout = null;
     analyzeWithAI();
   }, 300);
 }, true);
 
-// AI Analysis every 3 seconds
+// AI Analysis every 5 seconds
 async function analyzeWithAI() {
   if (analysisInProgress) return;
   if (stepCount > tasks.length) return;
   
+  // Respect minimum interval
+  const now = Date.now();
+  if (now - lastAnalysisTime < MIN_ANALYSIS_INTERVAL) {
+    return;
+  }
+  
   analysisInProgress = true;
+  lastAnalysisTime = now;
+  
+  let screenshot = null;
+  let currentTask = null;
   
   try {
     // Capture screenshot
-    const screenshot = await captureScreenshot();
+    screenshot = await captureScreenshot();
     if (!screenshot) {
       analysisInProgress = false;
       return;
     }
     
     const screenshotHash = simpleHash(screenshot);
-    if (screenshotHash === lastScreenshotHash) {
-      // Screen unchanged, skip analysis
+    
+    // Check if user recently clicked - if so, force analysis even if screen looks the same
+    const lastAction = actionHistory.length > 0 ? actionHistory[actionHistory.length - 1] : null;
+    const recentClickTime = lastAction && lastAction.action === 'click' ? new Date(lastAction.timestamp).getTime() : 0;
+    const timeSinceClick = Date.now() - recentClickTime;
+    const hadVeryRecentClick = timeSinceClick < 2000; // Within 2 seconds
+    
+    if (screenshotHash === lastScreenshotHash && !hadVeryRecentClick) {
+      // Screen unchanged and no recent click, skip analysis
       analysisInProgress = false;
       return;
     }
     lastScreenshotHash = screenshotHash;
     
-    const currentTask = tasks[stepCount - 1];
+    currentTask = tasks[stepCount - 1];
     const status = document.getElementById('status-message');
 
     // Don't show "analyzing" message - keep previous feedback visible
-    // Only send to backend for AI analysis
+    // Only send to backend for AI analysis with timeout
+    console.log('📤 Sending screenshot to backend for analysis...');
+    const startTime = Date.now();
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      console.error('⏱️ Request timeout after 20 seconds');
+      controller.abort();
+    }, 20000); // 20 second timeout (increased from 10)
+    
     const response = await fetch('http://localhost:3000/ai/analyze-screen', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -343,14 +523,21 @@ async function analyzeWithAI() {
         cursorPosition: { x: mouseX, y: mouseY },
         actionHistory: actionHistory.slice(-5), // Last 5 actions
         url: window.location.href
-      })
+      }),
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
+    
+    const elapsed = Date.now() - startTime;
+    console.log(`✅ Backend responded in ${elapsed}ms`);
 
     if (!response.ok) {
       throw new Error(`Backend error: ${response.status}`);
     }
 
     const data = await response.json();
+    console.log(`📥 Received AI response (total time: ${Date.now() - startTime}ms)`);
 
     // Parse the feedback - it might be JSON wrapped in markdown code blocks
     let feedback = data.feedback;
@@ -382,36 +569,138 @@ async function analyzeWithAI() {
     }
 
     // Also check taskComplete from the parsed feedback
-    let taskComplete = data.taskComplete;
+    // IMPORTANT: Default to false if there's an error
+    let taskComplete = data.error ? false : (data.taskComplete || false);
+    
     if (!taskComplete && feedback && data.feedback?.includes('```json')) {
       const jsonMatch = data.feedback.match(/```json\s*([\s\S]*?)\s*```/);
       if (jsonMatch) {
         try {
           const parsed = JSON.parse(jsonMatch[1]);
-          taskComplete = parsed.taskComplete;
+          taskComplete = parsed.taskComplete || false;
         } catch (e) {
           // ignore
         }
       }
     }
+    
+    // Never mark complete if AI analysis failed
+    if (data.error) {
+      taskComplete = false;
+    }
 
-    // If AI says task is complete, move to next step
-    if (taskComplete && stepCount < tasks.length) {
+    // Check if we should mark a sub-instruction as complete
+    // Mark sub-instructions as complete progressively based on user actions
+    const activeTask = tasks[stepCount - 1];
+    if (activeTask && activeTask.subInstructions && activeTask.subInstructions.length > 0) {
+      // Check if user took a recent action (click or navigation)
+      const lastAction = actionHistory.length > 0 ? actionHistory[actionHistory.length - 1] : null;
+      const hadRecentClick = lastAction && lastAction.action === 'click';
+      const hadUrlChange = lastUrl !== window.location.href;
+      const hadRecentAction = hadRecentClick || hadUrlChange;
+      
+      // Determine which sub-step to mark complete based on feedback
+      const nextIncompleteStep = activeTask.subInstructions.findIndex((_, idx) => !completedSubInstructions.has(idx + 1));
+      
+      // Only mark complete if:
+      // 1. There's an incomplete step
+      // 2. User took an action (click or navigation)
+      // 3. AI gives VERY SPECIFIC positive feedback with exclamation mark
+      // 4. Feedback explicitly mentions completing the step
+      // 5. AI provides proof of completion
+      if (nextIncompleteStep !== -1 && hadRecentAction && feedback) {
+        const feedbackLower = feedback.toLowerCase();
+        
+        // Require VERY specific completion phrases with exclamation marks AND proof
+        const hasStrongCompletion = (
+          (feedbackLower.includes('great!') && feedbackLower.includes('step')) ||
+          (feedbackLower.includes('perfect!') && feedbackLower.includes('step')) ||
+          (feedbackLower.includes('excellent!') && feedbackLower.includes('step')) ||
+          (feedbackLower.includes('completed') && feedbackLower.includes('!')) ||
+          (feedbackLower.includes('done!') && feedbackLower.includes('step'))
+        );
+        
+        // Also check if AI provided proof
+        const hasProof = data.proof && data.proof.length > 10;
+        const proofInFeedback = feedbackLower.includes('proof:');
+        
+        // Log what we received for debugging
+        console.group(`🔍 Completion Check - Step ${nextIncompleteStep + 1}`);
+        console.log(`Strong Completion Phrase: ${hasStrongCompletion ? '✅ YES' : '❌ NO'}`);
+        console.log(`Has Proof Field: ${hasProof ? '✅ YES' : '❌ NO'} (${data.proof?.length || 0} chars)`);
+        console.log(`Proof in Feedback: ${proofInFeedback ? '✅ YES' : '❌ NO'}`);
+        console.log(`Feedback: "${feedback}"`);
+        if (data.proof) {
+          console.log(`Proof: "${data.proof}"`);
+        }
+        console.groupEnd();
+        
+        if (hasStrongCompletion && (hasProof || proofInFeedback)) {
+          // Mark the next incomplete sub-instruction as complete
+          const stepToComplete = nextIncompleteStep + 1;
+          
+          // Prevent duplicate completions
+          if (!completedSubInstructions.has(stepToComplete)) {
+            completedSubInstructions.add(stepToComplete);
+            const proof = data.proof || 'AI verified completion';
+            console.group(`✅ MARKING COMPLETE - Step ${stepToComplete}`);
+            console.log(`Instruction: "${activeTask.subInstructions[nextIncompleteStep]}"`);
+            console.log(`Proof: "${proof}"`);
+            console.log(`Full AI Response:`, data);
+            console.groupEnd();
+            
+            // Animate the completion
+            setTimeout(() => {
+              const stepElement = document.getElementById(`sub-step-${stepToComplete}`);
+              if (stepElement) {
+                stepElement.style.transform = 'scale(1.05)';
+                setTimeout(() => {
+                  stepElement.style.transform = 'scale(1)';
+                  updateStepsList();
+                }, 200);
+              }
+            }, 300);
+          }
+        } else if (hasStrongCompletion && !hasProof && !proofInFeedback) {
+          console.group('⚠️ IGNORING - No Proof Provided');
+          console.warn(`AI tried to mark step complete without proof`);
+          console.warn(`Feedback: "${feedback}"`);
+          console.warn(`data.proof: ${data.proof || 'undefined'}`);
+          console.groupEnd();
+        }
+      }
+    }
+
+    // Check if ALL sub-instructions are actually complete (ignore AI's taskComplete flag)
+    const allSubInstructionsComplete = activeTask && 
+                                       activeTask.subInstructions && 
+                                       activeTask.subInstructions.length > 0 &&
+                                       completedSubInstructions.size === activeTask.subInstructions.length;
+    
+    // Only move to next task when ALL sub-instructions are manually completed
+    if (allSubInstructionsComplete && stepCount < tasks.length) {
+      console.group('🎯 TASK COMPLETION - All Sub-Instructions Done');
+      console.log('Completed sub-instructions:', Array.from(completedSubInstructions));
+      console.log('Total sub-instructions:', activeTask.subInstructions.length);
+      console.log('Moving to next task...');
+      console.groupEnd();
+      
       logAction('task_completed', `Completed: ${currentTask.text}`);
       setTimeout(() => {
         stepCount++;
-        const counter = document.getElementById('step-counter');
-        const currentStepNum = document.getElementById('current-step-num');
-        const taskDesc = document.getElementById('task-description');
-        if (counter) counter.textContent = stepCount;
-        if (currentStepNum) currentStepNum.textContent = stepCount;
-        if (taskDesc) taskDesc.textContent = tasks[stepCount - 1].text;
+        completedSubInstructions.clear(); // Reset for next task
+        updateCurrentTaskDisplay(); // Update task display with new task
         if (status) {
           status.textContent = '💡 Ready for next step';
         }
         updateStepsList(); // Update the steps list
       }, 1500);
-    } else if (taskComplete && stepCount === tasks.length) {
+    } else if (allSubInstructionsComplete && stepCount === tasks.length) {
+      console.group('🎉 ALL TASKS COMPLETION - All Sub-Instructions Done');
+      console.log('All tasks completed through manual sub-instruction completion');
+      console.log('Total tasks:', tasks.length);
+      console.groupEnd();
+      
       stepCount++;
       if (status) status.textContent = '🎉 All tasks complete! You\'re onboarded!';
       const taskDesc = document.getElementById('task-description');
@@ -426,14 +715,57 @@ async function analyzeWithAI() {
       }
       updateStepsList(); // Update the steps list
 
-      // Send tracking event to backend
+      // Send completion event to backend to mark onboarding as complete
       logAction('training_completed', 'All tasks finished');
       console.log('🎉 Training complete! Notifying backend...');
+      
+      // Mark onboarding as complete in backend
+      fetch('http://localhost:3000/onboarding/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: internEmail,
+          completedAt: new Date().toISOString()
+        })
+      }).then(res => {
+        if (res.ok) {
+          console.log('✅ Backend notified of completion');
+        }
+      }).catch(err => {
+        console.error('❌ Failed to notify backend:', err);
+      });
     }
 
   } catch (error) {
     const aiFeedback = document.getElementById('ai-feedback');
     const status = document.getElementById('status-message');
+
+    // Check for extension context invalidation
+    if (error.message.includes('Extension context invalidated')) {
+      console.error('🔄 Extension was reloaded - page needs refresh');
+      if (aiFeedback) {
+        aiFeedback.textContent = '🔄 Extension updated. Please reload this page to continue.';
+        aiFeedback.style.display = 'block';
+        aiFeedback.style.background = '#fff3cd';
+        aiFeedback.style.borderLeft = '3px solid #ff9800';
+        aiFeedback.style.color = '#856404';
+      }
+      if (status) {
+        status.textContent = '🔄 Please reload page';
+      }
+      analysisInProgress = false;
+      return;
+    }
+
+    // Log detailed error information
+    console.group('❌ AI Analysis Error');
+    console.error('Error message:', error.message);
+    console.error('Error type:', error.name);
+    console.error('Full error:', error);
+    console.error('Screenshot captured:', screenshot ? 'Yes' : 'No');
+    console.error('Screenshot length:', screenshot?.length || 0);
+    console.error('Current task:', currentTask);
+    console.groupEnd();
 
     if (aiFeedback) {
       if (error.message.includes('Failed to fetch')) {
@@ -442,8 +774,14 @@ async function analyzeWithAI() {
         aiFeedback.style.background = '#fff3cd';
         aiFeedback.style.borderLeft = '3px solid #ff9800';
         aiFeedback.style.color = '#856404';
+      } else if (error.message.includes('aborted')) {
+        aiFeedback.textContent = '⚠️ Analysis timeout - screenshot took too long';
+        aiFeedback.style.display = 'block';
+        aiFeedback.style.background = '#fff3cd';
+        aiFeedback.style.borderLeft = '3px solid #ff9800';
+        aiFeedback.style.color = '#856404';
       } else {
-        aiFeedback.textContent = '⚠️ AI analysis temporarily unavailable';
+        aiFeedback.textContent = `⚠️ AI analysis error: ${error.message}`;
         aiFeedback.style.display = 'block';
         aiFeedback.style.background = '#fff3cd';
         aiFeedback.style.borderLeft = '3px solid #ff9800';
@@ -452,7 +790,7 @@ async function analyzeWithAI() {
     }
 
     if (status) {
-      status.textContent = '⚠️ Error occurred';
+      status.textContent = `⚠️ Error: ${error.message.substring(0, 50)}`;
     }
   }
   
@@ -483,5 +821,5 @@ function simpleHash(str) {
   return hash;
 }
 
-// Start AI analysis loop
-setInterval(analyzeWithAI, 3000);
+// Start AI analysis loop - every 5 seconds
+setInterval(analyzeWithAI, 5000);

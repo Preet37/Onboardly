@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { executeOnboardingWithProgress } from './services/onboardingService';
 import PromptPanel from './components/PromptPanel';
@@ -29,33 +29,17 @@ const getInitialWorkflow = () => ({
       status: 'pending'
     },
     {
-      id: 'opened',
-      name: 'Waiting for Training Start',
-      type: 'learning',
-      description: 'Waiting for intern to open extension',
-      status: 'pending'
-    },
-    {
-      id: 'onboarding',
-      name: 'Completing Tasks',
-      type: 'hands-on',
-      description: 'Intern is completing onboarding tasks',
-      status: 'pending'
-    },
-    {
       id: 'onboarded',
-      name: 'Not Yet Onboarded',
+      name: 'Onboarding Ready',
       type: 'review',
-      description: 'Waiting to complete onboarding',
+      description: 'Onboarding setup complete',
       status: 'pending'
     }
   ],
   edges: [
     { from: 'analyzing', to: 'generating', status: 'pending' },
     { from: 'generating', to: 'sending', status: 'pending' },
-    { from: 'sending', to: 'opened', status: 'pending' },
-    { from: 'opened', to: 'onboarding', status: 'pending' },
-    { from: 'onboarding', to: 'onboarded', status: 'pending' }
+    { from: 'sending', to: 'onboarded', status: 'pending' }
   ]
 });
 
@@ -67,6 +51,47 @@ export default function OnboardingApp() {
   const [executing, setExecuting] = useState(false);
   const [progressMessage, setProgressMessage] = useState('Fill in the form above to start onboarding');
   const [jiraUrl, setJiraUrl] = useState(null);
+
+  // Poll for onboarding completion status
+  useEffect(() => {
+    if (!internInfo?.email) return;
+
+    const checkCompletion = async () => {
+      try {
+        const response = await fetch(`http://localhost:3000/onboarding/status/${encodeURIComponent(internInfo.email)}`);
+        const data = await response.json();
+        
+        if (data.completed) {
+          // Update the 'onboarded' node to completed status
+          setWorkflow(prev => ({
+            ...prev,
+            nodes: prev.nodes.map(node => 
+              node.id === 'onboarded' 
+                ? { ...node, status: 'completed' }
+                : node
+            ),
+            edges: prev.edges.map(edge =>
+              edge.to === 'onboarded'
+                ? { ...edge, status: 'completed' }
+                : edge
+            )
+          }));
+          setProgressMessage('🎉 Intern has completed onboarding!');
+          console.log('✅ Onboarding completed for:', internInfo.email);
+        }
+      } catch (error) {
+        console.error('Failed to check completion status:', error);
+      }
+    };
+
+    // Check immediately
+    checkCompletion();
+
+    // Poll every 3 seconds
+    const interval = setInterval(checkCompletion, 3000);
+
+    return () => clearInterval(interval);
+  }, [internInfo?.email]);
 
   const handleGenerateWorkflow = async (prompt, passedInternInfo = null) => {
     // Use passed intern info if provided, otherwise use state
@@ -112,31 +137,14 @@ export default function OnboardingApp() {
           setExecuting(false);
         }
 
-        // ISSUE 2 & 3 FIX: Update workflow node status AND names
+        // Update workflow node status
         setWorkflow(prev => ({
           ...prev,
           nodes: prev.nodes.map(node => {
             if (node.id === step) {
-              // Special handling for each step
-              if (step === 'opened' && status === 'running') {
-                // Waiting for extension to open
-                return { ...node, name: 'Waiting for Extension...', status };
-              } else if (step === 'opened' && status === 'completed') {
-                // Intern opened the extension - change name to show they started
-                return { ...node, name: 'Extension Opened ✓', status };
-              } else if (step === 'onboarding' && status === 'running') {
-                // This is the new intermediate step from backend
-                return { 
-                  ...node, 
-                  name: 'Intern Completing Tasks...', 
-                  status 
-                };
-              } else if (step === 'onboarding' && status === 'completed') {
-                // Training tasks completed
-                return { ...node, name: 'Tasks Completed ✓', status };
-              } else if (step === 'onboarded' && status === 'completed') {
-                // Final onboarded state
-                return { ...node, name: 'Fully Onboarded ✓', status };
+              // Special handling for onboarded step
+              if (step === 'onboarded' && status === 'completed') {
+                return { ...node, name: 'Setup Complete ✓', status };
               }
               return { ...node, status };
             }
@@ -156,9 +164,9 @@ export default function OnboardingApp() {
         }));
       });
 
-      setProgressMessage(`✅ ${internInfo.name} has been successfully onboarded!`);
+      setProgressMessage(`✅ Onboarding tasks sent to ${currentInternInfo.name}. Waiting for completion...`);
 
-      if (result.jiraEpicUrl) {
+      if (result && result.jiraEpicUrl) {
         setJiraUrl(result.jiraEpicUrl);
       }
     } catch (err) {

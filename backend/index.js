@@ -169,18 +169,27 @@ app.post('/onboard', async (req, res) => {
     const jiraEpicUrl = await createJiraWorkflow(tasks, intern, assigneeAccountId, workflow);
     console.log(`Jira Epic URL: ${jiraEpicUrl}`);
     
-    // Store tracking data with website configuration for extension
+    // Store tracking data with task configurations for extension
+    const taskConfigs = generateTaskConfigs(workflow);
     usageTracking.set(intern.email, {
       internEmail: intern.email,
       internName: intern.name,
-      websiteConfig: generateWebsiteConfig(workflow),
+      taskConfigs: taskConfigs, // Store task configs by platform
+      websiteConfig: generateWebsiteConfig(workflow), // Keep for backwards compatibility
       extensionActivated: false, // State: 0 (not started)
       trainingInProgress: false, // State: 0 (not in progress)
       trainingCompleted: false,  // State: 0 (not completed)
       createdAt: new Date()
     });
     
+    // IMPORTANT: Reset completion status for this email when generating new workflow
+    if (onboardingCompletions.has(intern.email)) {
+      console.log(`🔄 Resetting completion status for ${intern.email} (new workflow generated)`);
+      onboardingCompletions.delete(intern.email);
+    }
+
     console.log(`Extension config stored for ${intern.email}`);
+    console.log(`Task configs:`, Object.keys(taskConfigs));
 
     sendProgress('generating', 'completed', {
       message: `Created ${tasks.length} Jira tasks!`,
@@ -215,13 +224,23 @@ app.post('/onboard', async (req, res) => {
       emailSent: true
     });
 
-    // STEP 4: Intern Opening Training
-    // Wait for extension to notify us - don't close the stream yet
-    sendProgress('opened', 'running', { message: 'Waiting for intern to open training extension...' });
+    // STEP 4: Onboarding setup ready (NOT completed yet - waiting for intern to finish tasks)
+    sendProgress('onboarded', 'running', {
+      message: `Waiting for ${intern.name} to complete onboarding tasks...`,
+      tasksReady: true,
+      jiraEpicUrl: jiraEpicUrl,
+      taskCount: workflow.nodes.length
+    });
 
-    // NOTE: The stream stays open. When the extension notifies via /extension-opened,
-    // it will send the 'opened' completed event and continue the flow.
-    // For now, we don't proceed automatically - extension must signal.
+    // Close the SSE connection
+    clearInterval(keepAliveInterval);
+    res.write(`data: ${JSON.stringify({
+      step: 'done',
+      status: 'completed',
+      jiraEpicUrl: jiraEpicUrl
+    })}\n\n`);
+    res.end();
+    activeSessions.delete(intern.email);
 
   } catch (error) {
     console.error('Error in onboarding flow:', error);
@@ -303,7 +322,7 @@ async function generateWorkflowDAG(prompt) {
 
   const systemPrompt = `You are an onboarding workflow architect. Generate a DAG (Directed Acyclic Graph) representing an onboarding workflow.
 
-Create 6-10 sequential and parallel tasks with clear dependencies. Return ONLY valid JSON with this exact structure:
+Create EXACTLY 1 task (for demo purposes). The task should be VERY FOCUSED, QUICK (5 minutes max), and SIMPLE. Return ONLY valid JSON with this exact structure:
 
 {
   "nodes": [
@@ -311,38 +330,57 @@ Create 6-10 sequential and parallel tasks with clear dependencies. Return ONLY v
       "id": "step_1",
       "name": "Short descriptive name",
       "type": "access|learning|hands-on|review",
-      "description": "Detailed task description",
-      "estimatedDuration": "30min",
+      "description": "High-level task goal",
+      "subInstructions": [
+        "First specific action to take",
+        "Second specific action to take",
+        "Third specific action to take"
+      ],
+      "estimatedDuration": "5min",
       "status": "pending"
     }
   ],
-  "edges": [
-    {
-      "from": "step_1",
-      "to": "step_2",
-      "status": "pending"
-    }
-  ],
+  "edges": [],
   "metadata": {
-    "totalSteps": 8,
-    "estimatedTotalTime": "4hrs"
+    "totalSteps": 1,
+    "estimatedTotalTime": "5min"
   }
 }
 
 Node types:
 - "access": Setup, permissions, account creation
-- "learning": Reading docs, watching tutorials, understanding concepts
+- "learning": Reading docs, watching tutorials, understanding concepts (PREFERRED - use 80% of the time)
 - "hands-on": Practical exercises, building something, deploying
 - "review": Checkpoints, quizzes, manager reviews
 
-Rules:
-1. IDs must be unique (step_1, step_2, etc.)
-2. Create logical dependencies (edges) - no circular dependencies
-3. Tasks should progress: access → learning → hands-on → review
-4. Some tasks can run in parallel if they don't depend on each other
-5. Use realistic time estimates (15min, 30min, 1hr, 2hrs)
-6. ALWAYS include at least one very short (10-15min) task related to Google Cloud Console exploration or setup
-7. Return ONLY the JSON object, no markdown, no extra text`;
+CRITICAL RULES:
+1. Create EXACTLY 1 task (for demo purposes)
+2. ID must be "step_1"
+3. Task must be VERY SPECIFIC and FOCUSED based on the user's prompt
+4. Estimated duration: 5 minutes maximum
+5. STRONGLY PREFER exploration/navigation tasks over creation tasks:
+   - ✅ GOOD: "Explore the IAM page", "Navigate to Cloud Run", "View the API library"
+   - ❌ AVOID: "Create a project", "Deploy a service", "Build an application"
+   - Only create/build tasks if the user explicitly requests them
+6. The task must have EXACTLY 4-5 ORDERED sub-instructions that are:
+   - SPECIFIC to the user's requested workflow/goal
+   - ACTIONABLE with clear UI instructions
+   - SEQUENTIAL - user follows them one by one
+   - Use accurate Google Cloud Console UI paths when applicable
+   - Focus on NAVIGATION and EXPLORATION, not creation
+7. No edges array needed (empty array)
+8. Return ONLY the JSON object, no markdown, no extra text
+9. DO NOT include sign-in, login, or authentication steps - assume user is already logged in
+
+IMPORTANT - Use ACCURATE Google Cloud Console UI instructions when creating steps:
+- To create a project: "Click the project dropdown at the top (next to 'Google Cloud')" → "Click 'NEW PROJECT'" → "Enter project name and click 'CREATE'"
+- To access IAM: "Click the hamburger menu (☰) in top-left" → "Click 'IAM & Admin'" → "Click 'IAM'"
+- To access Cloud Run: "Click the hamburger menu (☰)" → "Find and click 'Cloud Run'"
+- To view logs: "Click the hamburger menu (☰)" → "Click 'Logging'" → "Click 'Logs Explorer'"
+- For APIs: "Click the hamburger menu (☰)" → "Click 'APIs & Services'" → "Click 'Library'"
+- For Compute Engine: "Click the hamburger menu (☰)" → "Click 'Compute Engine'" → "Click 'VM instances'"
+
+Generate sub-instructions that match the user's goal. Keep it simple, focused, and achievable in 5 minutes.`;
 
   try {
     const completion = await openai.chat.completions.create({
@@ -365,57 +403,6 @@ Rules:
     }
     if (!workflow.edges || !Array.isArray(workflow.edges)) {
       throw new Error('Invalid workflow structure: missing edges array');
-    }
-
-    // Ensure there's always a Google Cloud Console task
-    const hasGCPConsoleTask = workflow.nodes.some(node =>
-      node.name.toLowerCase().includes('google cloud console') ||
-      node.name.toLowerCase().includes('gcp console') ||
-      node.description.toLowerCase().includes('google cloud console')
-    );
-
-    if (!hasGCPConsoleTask) {
-      console.log('No GCP Console task found, adding one...');
-
-      // Add a GCP Console exploration task
-      const gcpConsoleTask = {
-        id: `gcp_console_${Date.now()}`,
-        name: 'Explore Google Cloud Console',
-        type: 'learning',
-        description: 'Quick tour of the Google Cloud Console interface and key navigation areas',
-        estimatedDuration: '10min',
-        status: 'pending'
-      };
-
-      // Add it as the second task (after initial setup/access)
-      workflow.nodes.splice(1, 0, gcpConsoleTask);
-
-      // Update edges to include the new task in the flow
-      if (workflow.nodes.length >= 3) {
-        // Connect first node to GCP Console task
-        workflow.edges.push({
-          from: workflow.nodes[0].id,
-          to: gcpConsoleTask.id,
-          status: 'pending'
-        });
-
-        // Connect GCP Console task to next node
-        workflow.edges.push({
-          from: gcpConsoleTask.id,
-          to: workflow.nodes[2].id,
-          status: 'pending'
-        });
-
-        // Remove old direct edge if it exists
-        workflow.edges = workflow.edges.filter(edge =>
-          !(edge.from === workflow.nodes[0].id && edge.to === workflow.nodes[2].id)
-        );
-      }
-
-      // Update metadata
-      if (workflow.metadata) {
-        workflow.metadata.totalSteps = workflow.nodes.length;
-      }
     }
 
     return workflow;
@@ -451,17 +438,35 @@ async function generateTasks(internPrompt) {
   // ... (This function is perfect, no changes) ...
   console.log('Calling Groq API...');
   
-  const systemPrompt = `You are a Senior SWE creating an onboarding plan. Generate a JSON object with a single key "tasks" which is an array of 8 step-by-step Jira task summaries for a new 'SWE Intern' who needs to learn the Google Cloud Console.
+  const systemPrompt = `You are a Senior SWE creating an onboarding plan. Generate a JSON object with a single key "tasks" which is an array of EXACTLY 1 FOCUSED task for a new 'SWE Intern'.
 
-The tasks must guide them through this flow:
-1. Gaining access to the development project.
-2. Learning about IAM roles and permissions.
-3. Deploying a sample 'hello-world' service (like on Cloud Run).
-4. Viewing the logs for that new service in Cloud Logging.
+CRITICAL REQUIREMENTS:
+- Create ONLY 1 task (not 8)
+- Task must be VERY SPECIFIC and FOCUSED based on the user's prompt
+- Task should take 5 minutes maximum
+- Task must be SIMPLE and ACHIEVABLE quickly
+- Task description should be clear and actionable
+- STRONGLY PREFER exploration/navigation tasks over creation tasks (80% of the time):
+  * ✅ GOOD: "Explore the IAM & Admin section", "Navigate to Cloud Run and view services", "Browse the API library"
+  * ❌ AVOID: "Create a new project", "Deploy an application", "Set up infrastructure"
+  * Only suggest creation tasks if the user explicitly requests them
+- DO NOT include sign-in, login, or authentication steps - assume user is already logged in
+
+IMPORTANT - Use ACCURATE Google Cloud Console UI instructions when applicable:
+- To create a new GCP project: Click the project dropdown at the top (next to "Google Cloud"), then click "NEW PROJECT" button
+- The project creation form has: Project name, Organization (optional), Location (optional), then "CREATE" button
+- There is NO "region" field in project creation - regions are selected when creating resources
+- IAM is accessed via the hamburger menu → "IAM & Admin" → "IAM"
+- Cloud Run is accessed via hamburger menu → "Cloud Run"
+- Logs are in hamburger menu → "Logging" → "Logs Explorer"
+- APIs are in hamburger menu → "APIs & Services" → "Library"
+- Compute Engine is in hamburger menu → "Compute Engine" → "VM instances"
+
+Generate a task that matches the user's requested workflow/goal.
 
 Return **only** the JSON object. Do not include markdown.
-Each object in the array should have one key: "task".
-Example: {"tasks": [{"task": "1. Log in to GCP..."}]}
+The array should have EXACTLY 1 object with one key: "task".
+Example: {"tasks": [{"task": "Set up your first Cloud Run service"}]}
 `;
 
   try {
@@ -585,10 +590,26 @@ async function createJiraWorkflow(tasks, intern, assigneeAccountId, workflow = n
       });
     }
 
+    // Create a specific, actionable Epic title based on workflow content
+    let epicTitle = `${intern.name}'s Onboarding`;
+    
+    if (workflow && workflow.nodes && workflow.nodes.length > 0) {
+      // Extract key activities from the workflow nodes
+      const activities = workflow.nodes
+        .map(node => node.name || node.description)
+        .filter(Boolean)
+        .slice(0, 2); // Take first 2 activities for brevity
+      
+      if (activities.length > 0) {
+        // Create actionable title like "John's Onboarding: Set up GCP Project & Deploy Cloud Run Service"
+        epicTitle = `${intern.name}'s Onboarding: ${activities.join(' & ')}`;
+      }
+    }
+    
     const epicPayload = {
       fields: {
         project: { key: JIRA_PROJECT_KEY },
-        summary: `Onboarding: ${intern.name} - Workflow`,
+        summary: epicTitle,
         description: epicDescription,
         issuetype: { id: epicIssueType.id },
         assignee: assigneeAccountId ? { accountId: assigneeAccountId } : null
@@ -601,58 +622,122 @@ async function createJiraWorkflow(tasks, intern, assigneeAccountId, workflow = n
     console.log(`Parent Epic created: ${parentEpicUrl}`);
 
     // === 3. CREATE ALL THE SUB-TASKS ===
-    console.log(`Creating ${tasks.length} sub-tasks...`);
-    
+    console.log(`Creating ${workflow.nodes.length} sub-tasks...`);
+
     const taskCreationPromises = [];
 
-    for (const taskDescription of tasks) {
-      if (!taskDescription) {
-        console.warn('Skipping an undefined task.');
+    for (const node of workflow.nodes) {
+      if (!node) {
+        console.warn('Skipping an undefined node.');
         continue;
       }
 
-      // Get relevant starting URL
-      const startingUrl = getStartingUrl(taskDescription);
+      // Get task description and starting URL
+      const taskSummary = `[${node.type.toUpperCase()}] ${node.name} - ${node.description} (Est: ${node.estimatedDuration})`;
+      const startingUrl = getStartingUrl(node.description);
+
+      // Create activation link that redirects to the task URL with email parameter
+      const activationLink = `http://localhost:${port}/activate?email=${encodeURIComponent(intern.email)}&target=${encodeURIComponent(startingUrl)}`;
+
+      // Build description content with sub-instructions
+      const descriptionContent = [
+        {
+          type: "paragraph",
+          content: [{
+            type: "text",
+            text: "🚀 Start this task with AI guidance: ",
+            marks: [{ type: "strong" }]
+          }]
+        },
+        {
+          type: "paragraph",
+          content: [{
+            type: "text",
+            text: "Click here to begin",
+            marks: [{
+              type: "link",
+              attrs: { href: activationLink }
+            }, { type: "strong" }]
+          }]
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "" }]
+        }
+      ];
+
+      // Add sub-instructions if available
+      if (node.subInstructions && node.subInstructions.length > 0) {
+        descriptionContent.push({
+          type: "paragraph",
+          content: [{
+            type: "text",
+            text: "📋 Step-by-step instructions:",
+            marks: [{ type: "strong" }]
+          }]
+        });
+
+        // Add ordered list of sub-instructions
+        descriptionContent.push({
+          type: "orderedList",
+          content: node.subInstructions.map(instruction => ({
+            type: "listItem",
+            content: [{
+              type: "paragraph",
+              content: [{
+                type: "text",
+                text: instruction
+              }]
+            }]
+          }))
+        });
+
+        descriptionContent.push({
+          type: "paragraph",
+          content: [{ type: "text", text: "" }]
+        });
+      }
+
+      // Add direct navigation link
+      descriptionContent.push({
+        type: "paragraph",
+        content: [{
+          type: "text",
+          text: "Or navigate directly to: ",
+          marks: [{ type: "em" }]
+        }]
+      });
+      descriptionContent.push({
+        type: "paragraph",
+        content: [{
+          type: "text",
+          text: startingUrl,
+          marks: [{
+            type: "link",
+            attrs: { href: startingUrl }
+          }]
+        }]
+      });
 
       const taskPayload = {
         fields: {
           project: { key: JIRA_PROJECT_KEY },
-          summary: taskDescription,
+          summary: taskSummary,
           description: {
             type: "doc",
             version: 1,
-            content: [
-              {
-                type: "paragraph",
-                content: [{
-                  type: "text",
-                  text: "Start here: ",
-                  marks: [{ type: "strong" }]
-                }]
-              },
-              {
-                type: "paragraph",
-                content: [{
-                  type: "text",
-                  text: startingUrl,
-                  marks: [{
-                    type: "link",
-                    attrs: { href: startingUrl }
-                  }]
-                }]
-              }
-            ]
+            content: descriptionContent
           },
           issuetype: { id: taskIssueType.id },
           parent: { key: parentEpicKey },
-          assignee: assigneeAccountId ? { accountId: assigneeAccountId } : null // <-- (NEW) Assign the sub-task
+          assignee: assigneeAccountId ? { accountId: assigneeAccountId } : null
         }
       };
       
       taskCreationPromises.push(
         JIRA_API.post('/rest/api/3/issue', taskPayload)
           .then(res => console.log(`Created task: ${res.data.key}`))
-          .catch(err => console.error(`Failed to create sub-task: ${taskDescription}`, err.response ? err.response.data.errors : err.message))
+          .catch(err => console.error(`Failed to create sub-task: ${node.name}`, err.response ? err.response.data.errors : err.message))
       );
     }
     
@@ -827,28 +912,74 @@ ${historyContext || 'No actions yet'}
 
 SCREENSHOT: [Base64 image provided]
 
+YOUR JOB:
+1. **LOOK AT THE SCREENSHOT** - Identify what page/screen the user is currently on
+2. **FIND THE CORRECT UI ELEMENT** - Locate where the user needs to click/interact for their current task
+3. **GUIDE THEM THERE** - Tell them exactly where to look and what to click
+
+For example:
+- If they need to create a project: Look for the project dropdown at the top (usually says "Select a project" or shows current project name), tell them to click it, then look for "NEW PROJECT" button
+- If they need to access IAM: Look for the hamburger menu (☰) on the left, tell them to click it and find "IAM & Admin"
+- If they need Cloud Run: Look for the hamburger menu, tell them to find "Cloud Run" in the menu
+- If they're on the wrong page: Tell them exactly how to navigate to the correct page
+
 Analyze the screenshot and determine:
-1. Is the user's CURSOR positioned correctly for the current task?
-2. Has the user completed the current task based on what you see?
-3. What should the user do next?
+1. What page/screen is the user currently on?
+2. Can you see the UI element they need to interact with? Where is it located?
+3. Is the user's cursor near the correct element?
+4. Has the user completed the current task based on what you see?
+5. What SPECIFIC action should they take next? (e.g., "Click the hamburger menu in the top-left", "Click the blue 'NEW PROJECT' button")
 
 Provide feedback that:
-- EMPHASIZES cursor placement (e.g., "Your cursor is near the menu button - click it!")
-- Gives specific guidance based on what you see
-- Is encouraging and helpful
-- Is concise (max 2 sentences)
+- Identifies what you see on screen
+- Tells them WHERE to look (top-left, top-right, sidebar, etc.)
+- Tells them WHAT to click (be specific about button text, icons, etc.)
+- Is encouraging and helpful when they do the right thing (use words like "Good!", "Great!", "Perfect!", "Correct!")
+- Is concise (max 2-3 sentences)
+
+CRITICAL COMPLETION RULES - READ CAREFULLY:
+- You can ONLY mark ONE step complete at a time - never mark multiple steps in one analysis
+- ONLY mark a step complete when you see DEFINITIVE PROOF in the screenshot
+- Use this EXACT format: "Great! Step [number] completed! [PROOF: describe what you see that proves completion]"
+- MUST include: the word "step", an exclamation mark, AND proof of what you see
+
+PROOF REQUIREMENTS - BE SPECIFIC:
+- Look at the CURRENT sub-instruction the user is working on (the first incomplete one)
+- Describe EXACTLY what you see in the screenshot that proves they completed it
+- Examples of good proof:
+  * "PROOF: I can see the project dropdown menu is now open with 'NEW PROJECT' button visible"
+  * "PROOF: The NEW PROJECT dialog is displayed with input fields for project name"
+  * "PROOF: The IAM page has loaded - I can see 'IAM' in the breadcrumb and the permissions table"
+  * "PROOF: The hamburger menu is expanded showing the full service list"
+
+DO NOT MARK COMPLETE WITHOUT PROOF:
+- Just navigating to a page (must see the page fully loaded with specific UI elements)
+- Hovering over buttons (must see the result of clicking - dialog, menu, etc.)
+- Partial UI changes (must see complete result)
+- Random clicking (must see intentional progress toward the goal)
+
+IMPORTANT RULES:
+1. Only mark ONE step complete per analysis - even if you see evidence of multiple steps
+2. Always start with the first incomplete step - don't skip ahead
+3. Provide proof of what you SEE in the screenshot
+4. If no proof visible, guide them to the next action
+
+Only mark taskComplete as true when ALL sub-instructions are completed with visual proof
 
 IMPORTANT: Respond with ONLY a JSON object, no markdown formatting, no code blocks.
 Format:
 {
   "taskComplete": true/false,
-  "feedback": "Your feedback message here",
-  "cursorAnalysis": "Where the cursor is and if it's in the right place"
+  "feedback": "Your guidance with proof if marking step complete",
+  "cursorAnalysis": "Where the cursor is and if it's near the correct element",
+  "stepCompleted": 0,
+  "proof": "What you see in the screenshot that proves completion (or empty string if not complete)"
 }`;
 
-    // Use Gemini for vision analysis (using newer Gemini 2.5 Flash)
+    // Use Gemini for vision analysis (using Gemini 2.0 Flash for higher rate limits)
+    // gemini-2.0-flash: 2K RPM vs gemini-2.5-flash: 1K RPM
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       generationConfig: {
         responseMimeType: "application/json"
       }
@@ -857,11 +988,21 @@ Format:
     // Convert base64 data URL to the format Gemini expects
     // Extract the base64 data (remove "data:image/jpeg;base64," prefix)
     const base64Data = screenshot.replace(/^data:image\/\w+;base64,/, '');
+    
+    // Validate screenshot
+    if (!base64Data || base64Data.length < 100) {
+      console.error('❌ Invalid screenshot data:', base64Data.substring(0, 50));
+      return res.status(400).json({
+        taskComplete: false,
+        feedback: '⚠️ Screenshot capture failed. Please reload the page.',
+        error: 'Invalid screenshot data'
+      });
+    }
 
     const imagePart = {
       inlineData: {
         data: base64Data,
-        mimeType: "image/jpeg"
+        mimeType: "image/png" // Changed to PNG as Chrome captures as PNG
       }
     };
 
@@ -887,13 +1028,19 @@ Format:
     
   } catch (error) {
     console.error('❌ AI Analysis Error:', error.message);
+    console.error('❌ Error stack:', error.stack);
     if (error.response) {
-      console.error('❌ Groq API Response:', error.response.status);
-      console.error('❌ Groq API Data:', JSON.stringify(error.response.data, null, 2));
+      console.error('❌ API Response Status:', error.response.status);
+      console.error('❌ API Response Data:', JSON.stringify(error.response.data, null, 2));
     }
+    
+    // Log more details about the request
+    console.error('❌ Screenshot length:', screenshot ? screenshot.length : 'null');
+    console.error('❌ Current task:', currentTask);
+    
     res.status(500).json({
       taskComplete: false,
-      feedback: '🤖 AI is thinking... Keep going!',
+      feedback: '⚠️ Unable to analyze screenshot. Please try clicking around or reloading the page.',
       error: error.message
     });
   }
@@ -1121,41 +1268,161 @@ app.get('/workflow/state/:internEmail', async (req, res) => {
   });
 });
 
-// Activation page - redirects to Google Console with email in URL
+// Activation page - redirects to target URL with email in URL
 app.get('/activate', (req, res) => {
-  const { email } = req.query;
-  
+  const { email, target } = req.query;
+
   if (!email) {
     return res.status(400).send('Missing email parameter');
   }
-  
+
   console.log(`🔗 Activating extension for: ${email}`);
-  
-  // Redirect to Google Console with email in URL
-  const redirectUrl = `https://console.cloud.google.com/?onboardly_email=${encodeURIComponent(email)}`;
-  res.redirect(redirectUrl);
+
+  // Use target URL if provided, otherwise default to Google Console
+  const baseUrl = target || 'https://console.cloud.google.com/';
+
+  // Add email parameter to URL
+  const url = new URL(baseUrl);
+  url.searchParams.set('onboardly_email', email);
+
+  console.log(`🎯 Redirecting to: ${url.toString()}`);
+  res.redirect(url.toString());
 });
+
+// Get tasks for a specific platform - used by extension to load dynamic tasks
+app.get('/extension/tasks/:internEmail/:platform', async (req, res) => {
+  const { internEmail, platform } = req.params;
+
+  console.log(`📋 Fetching tasks for ${internEmail} on platform: ${platform}`);
+
+  // Get tracking data - try exact match first, then case-insensitive
+  let tracking = usageTracking.get(internEmail);
+
+  if (!tracking && internEmail) {
+    const lowerEmail = internEmail.toLowerCase();
+    for (const [key, value] of usageTracking.entries()) {
+      if (key.toLowerCase() === lowerEmail) {
+        tracking = value;
+        console.log(`✅ Found tracking data with case-insensitive match: ${key}`);
+        break;
+      }
+    }
+  }
+
+  if (!tracking) {
+    console.error(`❌ Intern not found: ${internEmail}`);
+    return res.status(404).json({
+      error: 'Intern not found. Please complete onboarding setup first.',
+      availableInterns: Array.from(usageTracking.keys())
+    });
+  }
+
+  if (!tracking.taskConfigs) {
+    console.error(`❌ No task configs found for: ${internEmail}`);
+    return res.status(404).json({
+      error: 'No task configurations found for this intern'
+    });
+  }
+
+  // Find tasks for the specified platform
+  const platformConfig = tracking.taskConfigs[platform];
+
+  if (!platformConfig) {
+    console.warn(`⚠️ No tasks found for platform: ${platform}`);
+    console.log(`📋 Available platforms:`, Object.keys(tracking.taskConfigs));
+    return res.status(404).json({
+      error: `No tasks found for platform: ${platform}`,
+      availablePlatforms: Object.keys(tracking.taskConfigs)
+    });
+  }
+
+  console.log(`✅ Found ${platformConfig.tasks.length} tasks for ${platform}`);
+
+  res.json({
+    success: true,
+    internName: tracking.internName,
+    platform: platform,
+    baseUrl: platformConfig.baseUrl,
+    tasks: platformConfig.tasks
+  });
+});
+
+/**
+ * Generate task configurations from workflow nodes
+ * Groups tasks by platform base URL for extension loading
+ * Returns: { platform_url: { tasks: [...], baseDomain: '...' } }
+ */
+function generateTaskConfigs(workflow) {
+  const configs = {};
+
+  if (!workflow || !workflow.nodes) {
+    return configs;
+  }
+
+  workflow.nodes.forEach((node, index) => {
+    // Get the starting URL for this task
+    const startingUrl = getStartingUrl(node.description);
+
+    // Extract base domain from URL
+    const baseDomain = extractBaseDomain(startingUrl);
+
+    if (!configs[baseDomain]) {
+      configs[baseDomain] = {
+        baseDomain: baseDomain,
+        baseUrl: startingUrl,
+        tasks: []
+      };
+    }
+
+    configs[baseDomain].tasks.push({
+      id: node.id,
+      order: index + 1,
+      text: node.description,
+      name: node.name,
+      type: node.type,
+      estimatedDuration: node.estimatedDuration,
+      targetUrl: startingUrl,
+      subInstructions: node.subInstructions || []
+    });
+  });
+
+  return configs;
+}
+
+/**
+ * Extract base domain from URL
+ * e.g., "https://console.cloud.google.com/storage" -> "console.cloud.google.com"
+ */
+function extractBaseDomain(url) {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch (e) {
+    return 'unknown';
+  }
+}
 
 /**
  * Generate website configuration from workflow
  * Returns a dictionary: { website_url: [subtasks] }
+ * (Kept for backwards compatibility)
  */
 function generateWebsiteConfig(workflow) {
   const config = {};
-  
+
   if (!workflow || !workflow.nodes) {
     return config;
   }
-  
+
   // Group tasks by website/URL
   workflow.nodes.forEach(node => {
     // Extract website from metadata or default
     const website = node.metadata?.url || node.metadata?.website || 'https://console.cloud.google.com/*';
-    
+
     if (!config[website]) {
       config[website] = [];
     }
-    
+
     config[website].push({
       id: node.id,
       name: node.name,
@@ -1165,9 +1432,54 @@ function generateWebsiteConfig(workflow) {
       keywords: node.metadata?.keywords || []
     });
   });
-  
+
   return config;
 }
+
+// In-memory storage for onboarding completion status (per session)
+const onboardingCompletions = new Map(); // email -> { completed: boolean, completedAt: timestamp }
+
+// Endpoint to mark onboarding as complete
+app.post('/onboarding/complete', (req, res) => {
+  const { email, completedAt } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({ error: 'Email required' });
+  }
+  
+  onboardingCompletions.set(email, {
+    completed: true,
+    completedAt: completedAt || new Date().toISOString()
+  });
+  
+  console.log(`✅ Onboarding marked complete for: ${email}`);
+  res.json({ success: true, email, completed: true });
+});
+
+// Endpoint to check onboarding completion status
+app.get('/onboarding/status/:email', (req, res) => {
+  const { email } = req.params;
+  const status = onboardingCompletions.get(email) || { completed: false };
+  
+  res.json({
+    email,
+    completed: status.completed || false,
+    completedAt: status.completedAt || null
+  });
+});
+
+// Endpoint to reset onboarding status (for testing)
+app.post('/onboarding/reset', (req, res) => {
+  const { email } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({ error: 'Email required' });
+  }
+  
+  onboardingCompletions.delete(email);
+  console.log(`🔄 Onboarding reset for: ${email}`);
+  res.json({ success: true, email, completed: false });
+});
 
 app.listen(port, () => {
   console.log(`Onboarding server running at http://localhost:${port}`);

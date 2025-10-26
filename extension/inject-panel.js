@@ -604,11 +604,11 @@ async function analyzeWithAI() {
       
       // Only mark complete if:
       // 1. There's an incomplete step
-      // 2. User took an action (click or navigation)
-      // 3. AI gives VERY SPECIFIC positive feedback with exclamation mark
-      // 4. Feedback explicitly mentions completing the step
-      // 5. AI provides proof of completion
-      if (nextIncompleteStep !== -1 && hadRecentAction && feedback) {
+      // 2. AI gives VERY SPECIFIC positive feedback with exclamation mark
+      // 3. Feedback explicitly mentions completing the step
+      // 4. AI provides proof of completion
+      // Note: Removed hadRecentAction requirement for observation steps
+      if (nextIncompleteStep !== -1 && feedback) {
         const feedbackLower = feedback.toLowerCase();
         
         // Require VERY specific completion phrases with exclamation marks AND proof

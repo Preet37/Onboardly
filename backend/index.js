@@ -224,13 +224,9 @@ app.post('/onboard', async (req, res) => {
       emailSent: true
     });
 
-    // STEP 4: Onboarding setup ready (NOT completed yet - waiting for intern to finish tasks)
-    sendProgress('onboarded', 'running', {
-      message: `Waiting for ${intern.name} to complete onboarding tasks...`,
-      tasksReady: true,
-      jiraEpicUrl: jiraEpicUrl,
-      taskCount: workflow.nodes.length
-    });
+    // STEP 4: Onboarding setup ready - keep as pending until intern completes tasks
+    // Don't send any progress update - leave the node in pending state
+    // It will only turn green when the frontend detects completion via polling
 
     // Close the SSE connection
     clearInterval(keepAliveInterval);
@@ -951,6 +947,18 @@ PROOF REQUIREMENTS - BE SPECIFIC:
   * "PROOF: The NEW PROJECT dialog is displayed with input fields for project name"
   * "PROOF: The IAM page has loaded - I can see 'IAM' in the breadcrumb and the permissions table"
   * "PROOF: The hamburger menu is expanded showing the full service list"
+  * "PROOF: The main dashboard is visible with metrics, charts, and key information displayed"
+
+SPECIAL CASE - OBSERVATION/EXPLORATION STEPS:
+- For steps like "Scan", "Take note of", "Observe", "Review", "Explore", "Examine":
+  * Mark complete if the user is VIEWING or INTERACTING with the correct page/section
+  * User can click around, expand items, or just view - all count as completion
+  * PROOF: Describe what page elements, data, or information you can see
+  * Examples:
+    - "PROOF: IAM page visible with roles table displayed, user is exploring permissions"
+    - "PROOF: Dashboard visible with metrics and charts, user has viewed the key information"
+    - "PROOF: Roles list is visible, user can see Viewer, Editor, and Owner roles"
+  * These steps are about AWARENESS, not specific actions - if they're on the right page, mark complete
 
 DO NOT MARK COMPLETE WITHOUT PROOF:
 - Just navigating to a page (must see the page fully loaded with specific UI elements)

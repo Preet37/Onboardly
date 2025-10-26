@@ -1,0 +1,375 @@
+/**
+ * AI Onboarding Coach - Widget Styles
+ */
+
+/* Control Panel */
+.ai-coach-control {
+  position: fixed;
+  z-index: 999998;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: white;
+  min-width: 280px;
+  max-width: 320px;
+}
+
+.ai-coach-control.position-right {
+  top: 20px;
+  right: 20px;
+}
+
+.ai-coach-control.position-left {
+  top: 20px;
+  left: 20px;
+}
+
+.ai-coach-control.position-bottom-right {
+  bottom: 20px;
+  right: 20px;
+}
+
+.control-header {
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.control-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.control-toggle {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.control-toggle:hover {
+  opacity: 0.8;
+}
+
+.control-body {
+  padding: 16px;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.indicator-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+  background: #666;
+}
+
+.indicator-dot.active {
+  background: #4CAF50;
+  box-shadow: 0 0 8px #4CAF50;
+  animation: pulse 2s infinite;
+}
+
+.indicator-dot.inactive {
+  background: #666;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.task-info,
+.step-info {
+  margin-bottom: 12px;
+}
+
+.task-info label,
+.step-info label {
+  display: block;
+  font-size: 11px;
+  margin-bottom: 6px;
+  opacity: 0.9;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.task-info select {
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #333;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.task-info select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.step-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.step-controls button {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+
+.step-controls button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.step-controls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.step-controls span {
+  flex: 1;
+  text-align: center;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.btn-primary,
+.btn-danger {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 12px;
+  font-family: inherit;
+}
+
+.btn-primary {
+  background: #4CAF50;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #45a049;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+}
+
+.btn-danger {
+  background: #F44336;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #da190b;
+}
+
+/* Guidance Panel */
+.ai-coach-guidance {
+  position: fixed;
+  z-index: 999999;
+  width: 420px;
+  max-height: 90vh;
+  background: white;
+  border: 2px solid #4CAF50;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.ai-coach-guidance.position-right {
+  top: 80px;
+  right: 20px;
+}
+
+.ai-coach-guidance.position-left {
+  top: 80px;
+  left: 20px;
+}
+
+.ai-coach-guidance.position-bottom-right {
+  bottom: 80px;
+  right: 20px;
+}
+
+.guidance-header {
+  background: #4CAF50;
+  color: white;
+  padding: 16px;
+  font-weight: 600;
+  font-size: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.guidance-close {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 28px;
+  height: 28px;
+  line-height: 28px;
+  text-align: center;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.guidance-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.guidance-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.status-badge {
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-weight: 600;
+  text-align: center;
+  color: white;
+  font-size: 14px;
+}
+
+.guidance-section {
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+.section-content {
+  color: #666;
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+.section-content.explanation {
+  font-style: italic;
+  background: #f5f5f5;
+  padding: 12px;
+  border-radius: 6px;
+  border-left: 3px solid #4CAF50;
+}
+
+.section-list {
+  margin: 0;
+  padding-left: 20px;
+  color: #666;
+}
+
+.section-list li {
+  margin-bottom: 6px;
+  line-height: 1.5;
+  font-size: 14px;
+}
+
+.guidance-footer {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e0e0e0;
+  font-size: 12px;
+  color: #999;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .ai-coach-control {
+    min-width: 240px;
+    max-width: 280px;
+  }
+
+  .ai-coach-guidance {
+    width: calc(100% - 40px);
+    max-width: 400px;
+  }
+
+  .ai-coach-control.position-right,
+  .ai-coach-guidance.position-right {
+    right: 10px;
+  }
+
+  .ai-coach-control.position-left,
+  .ai-coach-guidance.position-left {
+    left: 10px;
+  }
+
+  .ai-coach-control.position-bottom-right,
+  .ai-coach-guidance.position-bottom-right {
+    right: 10px;
+    bottom: 10px;
+  }
+}
+
+/* Print: hide widget */
+@media print {
+  .ai-coach-control,
+  .ai-coach-guidance {
+    display: none !important;
+  }
+}

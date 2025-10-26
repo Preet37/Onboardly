@@ -1,0 +1,192 @@
+/**
+ * AI Onboarding Coach - Content Styles
+ * Injected into GCP Console
+ */
+
+.ai-coach-panel {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  width: 400px;
+  max-height: 600px;
+  background: white;
+  border: 2px solid #667eea;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  z-index: 999999;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.coach-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.coach-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.coach-icon {
+  font-size: 18px;
+}
+
+.coach-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.coach-step {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.coach-minimize {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  transition: background 0.2s;
+}
+
+.coach-minimize:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.coach-body {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.coach-status {
+  margin-bottom: 16px;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #9E9E9E;
+}
+
+.status-dot.active {
+  background: #4CAF50;
+  box-shadow: 0 0 8px #4CAF50;
+  animation: pulse 2s infinite;
+}
+
+.status-dot.correct {
+  background: #4CAF50;
+}
+
+.status-dot.wrong_step {
+  background: #FF9800;
+}
+
+.status-dot.has_errors {
+  background: #F44336;
+}
+
+.status-dot.incomplete {
+  background: #2196F3;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.coach-content {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.coach-content h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 12px 0 8px 0;
+  color: #333;
+}
+
+.coach-content p {
+  margin: 0 0 12px 0;
+  color: #666;
+}
+
+.coach-content ul, .coach-content ol {
+  margin: 0 0 12px 0;
+  padding-left: 20px;
+  color: #666;
+}
+
+.coach-content li {
+  margin-bottom: 6px;
+}
+
+.guidance-message {
+  background: #f5f5f5;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.guidance-issues {
+  background: #fff3cd;
+  padding: 12px;
+  border-radius: 8px;
+  border-left: 3px solid #FF9800;
+  margin-bottom: 12px;
+}
+
+.guidance-actions {
+  background: #e8f5e9;
+  padding: 12px;
+  border-radius: 8px;
+  border-left: 3px solid #4CAF50;
+  margin-bottom: 12px;
+}
+
+.guidance-explanation {
+  background: #e3f2fd;
+  padding: 12px;
+  border-radius: 8px;
+  border-left: 3px solid #2196F3;
+}
+
+.guidance-explanation p {
+  font-style: italic;
+  margin: 0;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .ai-coach-panel {
+    width: calc(100% - 40px);
+    max-width: 400px;
+  }
+}

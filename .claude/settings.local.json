@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git log:*)",
+      "Bash(cat:*)",
+      "Bash(git fetch:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(python generate_icons.py:*)",
+      "Bash(tree:*)",
+      "Bash(curl:*)",
+      "Bash(python -m json.tool:*)",
+      "Read(//private/tmp/**)",
+      "Bash(lsof:*)",
+      "Bash(pip install:*)",
+      "Bash(pkill:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

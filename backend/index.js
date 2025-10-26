@@ -967,12 +967,17 @@ SPECIAL CASE - OBSERVATION/EXPLORATION STEPS:
 - For steps like "Scan", "Take note of", "Observe", "Review", "Explore", "Examine":
   * Mark complete if the user is VIEWING or INTERACTING with the correct page/section
   * User can click around, expand items, or just view - all count as completion
+  * BE LENIENT - if the step says "Explore A, B, C, and D", mark complete if they visit ANY of them
+  * Examples of lenient completion:
+    - Step: "Explore Compute, Storage, Networking, IAM" → Mark complete if they visit ANY of these sections
+    - Step: "Review the dashboard metrics" → Mark complete if they're viewing the dashboard
+    - Step: "Take note of menu options" → Mark complete if menu is visible
   * PROOF: Describe what page elements, data, or information you can see
   * Examples:
-    - "PROOF: IAM page visible with roles table displayed, user is exploring permissions"
-    - "PROOF: Dashboard visible with metrics and charts, user has viewed the key information"
-    - "PROOF: Roles list is visible, user can see Viewer, Editor, and Owner roles"
-  * These steps are about AWARENESS, not specific actions - if they're on the right page, mark complete
+    - "PROOF: User is on IAM & Admin page, exploring one of the required sections"
+    - "PROOF: User is on Cloud Storage page, which is part of the Storage section to explore"
+    - "PROOF: User is on Compute Engine, which is part of the Compute section to explore"
+  * These steps are about AWARENESS and EXPLORATION, not completing every single item - be generous!
 
 DO NOT MARK COMPLETE WITHOUT PROOF:
 - Just navigating to a page (must see the page fully loaded with specific UI elements)

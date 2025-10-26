@@ -97,6 +97,7 @@ app.post('/onboard', async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
 
   const sendProgress = (step, status, data = {}) => {
     res.write(`data: ${JSON.stringify({ step, status, ...data })}\n\n`);
@@ -109,6 +110,19 @@ app.post('/onboard', async (req, res) => {
     res
   };
   activeSessions.set(intern.email, sessionData);
+  console.log(`📝 Stored session for: ${intern.email}`);
+  
+  // Keep-alive to prevent timeout
+  const keepAliveInterval = setInterval(() => {
+    res.write(': keep-alive\n\n');
+  }, 15000); // Send keep-alive every 15 seconds
+  
+  // Clean up on connection close
+  req.on('close', () => {
+    clearInterval(keepAliveInterval);
+    activeSessions.delete(intern.email);
+    console.log(`🔌 Client disconnected: ${intern.email}`);
+  });
 
   try {
     // STEP 1: AI Analyzing
@@ -165,7 +179,8 @@ app.post('/onboard', async (req, res) => {
     console.log('Calendar invites created.');
 
     // Create extension activation link with intern's email
-    const extensionActivationLink = `chrome-extension://YOUR_EXTENSION_ID/activate.html?email=${encodeURIComponent(intern.email)}`;
+    // This redirects to Google Console with email in URL so extension can pick it up
+    const extensionActivationLink = `http://localhost:${port}/activate?email=${encodeURIComponent(intern.email)}`;
 
     const emailPayload = {
       internName: intern.name,
@@ -761,6 +776,8 @@ EXTENSION TRACKING & CONFIGURATION ENDPOINTS
 app.post('/track/extension-usage', async (req, res) => {
   const { internEmail, event, website, step, timestamp } = req.body;
   
+  console.log(`📥 Received tracking event:`, { internEmail, event, website, step });
+  
   console.log(`🤖 Extension event: ${event} for ${internEmail} on ${website}`);
   
   // Get tracking data
@@ -787,8 +804,13 @@ app.post('/track/extension-usage', async (req, res) => {
     tracking.firstActivationAt = new Date();
     tracking.trainingInProgress = true; // Training in progress
     
+    console.log(`🔍 Looking for active session for: ${internEmail}`);
+    console.log(`📊 Active sessions:`, Array.from(activeSessions.keys()));
+    
     const session = activeSessions.get(internEmail);
     if (session && session.sendProgress) {
+      console.log(`✅ Session found! Sending progress updates...`);
+      
       // Mark "opened" as completed
       session.sendProgress('opened', 'completed', {
         message: `${tracking.internName} opened the AI Coach!`,
@@ -800,9 +822,12 @@ app.post('/track/extension-usage', async (req, res) => {
         message: `${tracking.internName} is completing onboarding tasks...`,
         trainingInProgress: true
       });
+      
+      console.log(`✅ Training STARTED for ${internEmail} (0→1)`);
+    } else {
+      console.error(`❌ No active session found for ${internEmail}`);
+      console.log(`Available sessions: ${Array.from(activeSessions.keys()).join(', ')}`);
     }
-    
-    console.log(`✅ Training STARTED for ${internEmail} (0→1)`);
   }
   
   // STATE FLIP 1→0: Training completed (all tasks done)
@@ -881,6 +906,21 @@ app.get('/extension/state/:internEmail', async (req, res) => {
       trainingCompletedAt: tracking.trainingCompletedAt
     }
   });
+});
+
+// Activation page - redirects to Google Console with email in URL
+app.get('/activate', (req, res) => {
+  const { email } = req.query;
+  
+  if (!email) {
+    return res.status(400).send('Missing email parameter');
+  }
+  
+  console.log(`🔗 Activating extension for: ${email}`);
+  
+  // Redirect to Google Console with email in URL
+  const redirectUrl = `https://console.cloud.google.com/?onboardly_email=${encodeURIComponent(email)}`;
+  res.redirect(redirectUrl);
 });
 
 /**

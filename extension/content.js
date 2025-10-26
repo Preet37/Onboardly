@@ -26,21 +26,32 @@ if (document.readyState === 'loading') {
 }
 
 async function initialize() {
+  console.log('🚀 AI Coach initializing...');
+  
   // Get intern email from URL parameter or storage
   const urlParams = new URLSearchParams(window.location.search);
-  internEmail = urlParams.get('email') || localStorage.getItem('onboardly_intern_email');
+  internEmail = urlParams.get('onboardly_email') || urlParams.get('email') || localStorage.getItem('onboardly_intern_email');
+  
+  console.log('🔍 Checking for intern email...', { 
+    fromURL_onboardly: urlParams.get('onboardly_email'),
+    fromURL_email: urlParams.get('email'), 
+    fromStorage: localStorage.getItem('onboardly_intern_email') 
+  });
   
   if (!internEmail) {
     // Try to get from Chrome storage
     try {
       const result = await chrome.storage.local.get(['internEmail']);
       internEmail = result.internEmail;
+      console.log('📦 Got email from Chrome storage:', internEmail);
     } catch (e) {
-      // No email found
+      console.warn('⚠️ No intern email found');
     }
   }
   
   if (internEmail) {
+    console.log(`✅ Intern email set: ${internEmail}`);
+    
     localStorage.setItem('onboardly_intern_email', internEmail);
     try {
       await chrome.storage.local.set({ internEmail });
@@ -52,12 +63,17 @@ async function initialize() {
     await loadExtensionConfig();
     
     // Send tracking event: extension activated
-    sendTrackingEvent('extension_activated', window.location.href, currentStep);
+    console.log('📡 Sending extension_activated event...');
+    await sendTrackingEvent('extension_activated', window.location.href, currentStep);
+  } else {
+    console.warn('⚠️ No intern email available - tracking disabled');
   }
 
   createCoachPanel();
   startMonitoring();
   trackMousePosition();
+  
+  console.log('✅ AI Coach initialized');
 }
 
 /**
@@ -423,10 +439,15 @@ async function loadExtensionConfig() {
  * Send tracking event to backend
  */
 async function sendTrackingEvent(event, website, step) {
-  if (!internEmail) return;
+  if (!internEmail) {
+    console.warn('⚠️ Cannot send tracking event: no internEmail set');
+    return;
+  }
+  
+  console.log(`📤 Sending tracking event: ${event}`, { internEmail, website, step });
   
   try {
-    await fetch(`${ONBOARDING_API_URL}/track/extension-usage`, {
+    const response = await fetch(`${ONBOARDING_API_URL}/track/extension-usage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -437,8 +458,11 @@ async function sendTrackingEvent(event, website, step) {
         timestamp: new Date().toISOString()
       })
     });
+    
+    const data = await response.json();
+    console.log(`✅ Tracking event sent successfully:`, data);
   } catch (error) {
-    console.error('Failed to send tracking event:', error);
+    console.error('❌ Failed to send tracking event:', error);
   }
 }
 

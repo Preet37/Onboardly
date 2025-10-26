@@ -512,12 +512,23 @@ async function analyzeWithAI() {
       controller.abort();
     }, 20000); // 20 second timeout (increased from 10)
     
+    // Find the current sub-instruction (first incomplete one)
+    const nextIncompleteStep = currentTask.subInstructions?.findIndex((_, idx) => !completedSubInstructions.has(idx + 1));
+    const currentSubInstruction = nextIncompleteStep !== -1 && currentTask.subInstructions 
+      ? currentTask.subInstructions[nextIncompleteStep] 
+      : null;
+    const currentSubStepNumber = nextIncompleteStep !== -1 ? nextIncompleteStep + 1 : 0;
+    
     const response = await fetch('http://localhost:3000/ai/analyze-screen', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         screenshot,
         currentTask: currentTask.text,
+        currentSubInstruction: currentSubInstruction,
+        currentSubStepNumber: currentSubStepNumber,
+        totalSubSteps: currentTask.subInstructions?.length || 0,
+        completedSubSteps: Array.from(completedSubInstructions),
         stepNumber: stepCount,
         totalSteps: tasks.length,
         cursorPosition: { x: mouseX, y: mouseY },

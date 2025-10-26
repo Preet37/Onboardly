@@ -890,11 +890,25 @@ app.post('/ai/analyze-screen', async (req, res) => {
     const recentClick = actionHistory.length > 0 && actionHistory[actionHistory.length - 1].action === 'click';
     const lastAction = actionHistory.length > 0 ? actionHistory[actionHistory.length - 1] : null;
 
+    // Extract sub-instruction info
+    const { currentSubInstruction, currentSubStepNumber, totalSubSteps, completedSubSteps } = req.body;
+    
     // Create AI prompt with emphasis on cursor position and recent clicks
     const prompt = `You are an AI onboarding coach watching a user learn Google Cloud Platform.
 
-CURRENT TASK (Step ${stepNumber}/${totalSteps}):
+OVERALL TASK (${stepNumber}/${totalSteps}):
 "${currentTask}"
+
+${currentSubInstruction ? `
+🎯 CURRENT SUB-STEP (${currentSubStepNumber}/${totalSubSteps}):
+"${currentSubInstruction}"
+
+COMPLETED SUB-STEPS: ${completedSubSteps && completedSubSteps.length > 0 ? completedSubSteps.join(', ') : 'None yet'}
+REMAINING SUB-STEPS: ${totalSubSteps - (completedSubSteps?.length || 0)}
+
+CRITICAL: You are ONLY evaluating if the user completed THIS specific sub-step: "${currentSubInstruction}"
+Do NOT mark any other sub-steps complete. Focus ONLY on sub-step ${currentSubStepNumber}.
+` : ''}
 
 CURRENT PAGE: ${url}
 

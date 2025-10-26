@@ -12,6 +12,11 @@ venv/
 env/
 ENV/
 
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+
 # IDEs
 .vscode/
 .idea/

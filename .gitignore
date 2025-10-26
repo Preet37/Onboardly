@@ -1,0 +1,14 @@
+# Dependency directories
+node_modules/
+
+# Environment variables
+.env
+
+# Google Cloud credentials
+google-creds.json
+
+# Log files
+*.log
+
+# macOS system files
+.DS_Store

@@ -14,7 +14,11 @@
       "Bash(pip install:*)",
       "Bash(pkill:*)",
       "Bash(npm run dev:*)",
-      "Bash(node index.js:*)"
+      "Bash(node index.js:*)",
+      "Bash(xargs kill:*)",
+      "Bash(node:*)",
+      "Bash(python3:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

@@ -1,6 +1,7 @@
 // Import all your libraries
 const express = require('express');
 const { OpenAI } = require('openai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const sgMail = require('@sendgrid/mail');
 const axios = require('axios');
 const ics = require('ics');
@@ -10,31 +11,37 @@ require('dotenv').config();
 // --- CONFIGURE YOUR CLIENTS ---
 const app = express();
 const port = process.env.PORT || 3000;
-app.use(express.json());
+app.use(express.json({ limit: '100mb' })); // Increase limit for screenshots
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, Postman) or from allowed origins
+    // Allow requests with no origin or from allowed origins
     const allowedOrigins = [
-      'http://localhost',
-      'https://console.cloud.google.com',  // Chrome extension runs in this context
-      'chrome-extension://'
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'https://console.cloud.google.com'
     ];
     
-    if (!origin || allowedOrigins.some(allowed => origin.startsWith(allowed))) {
+    if (!origin || allowedOrigins.includes(origin) || origin.startsWith('chrome-extension://')) {
       callback(null, true);
     } else {
       console.warn(`CORS blocked origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
+      callback(null, true); // Allow anyway for development
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Groq Client (using the OpenAI library)
+// Groq Client (using the OpenAI library) - for text generation
 const openai = new OpenAI({
   apiKey: process.env.GROQ_API_KEY, // Use the Groq key
   baseURL: 'https://api.groq.com/openai/v1', // Point to Groq's servers
 });
+
+// Gemini Client - for vision analysis
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // SendGrid Client
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -44,6 +51,9 @@ const activeSessions = new Map();
 
 // Track extension usage and link clicks
 const usageTracking = new Map(); // keyed by intern email or tracking ID
+
+// Track workflow states for polling (in case SSE closes)
+const workflowStates = new Map(); // keyed by intern email
 
 // Jira Client Config
 const JIRA_AUTH = Buffer.from(
@@ -775,6 +785,122 @@ async function sendWelcomeEmail(internEmail, payload) {
 // Start the server
 /*
 ================================================================================
+AI ANALYSIS ENDPOINT
+================================================================================
+*/
+
+// AI analyzes screenshot with cursor position and action history
+app.post('/ai/analyze-screen', async (req, res) => {
+  const { screenshot, currentTask, stepNumber, totalSteps, cursorPosition, actionHistory, url } = req.body;
+  
+  console.log(`🤖 AI Analysis Request - Step ${stepNumber}/${totalSteps}`);
+  console.log(`📍 Cursor at (${cursorPosition.x}, ${cursorPosition.y})`);
+  console.log(`📝 Recent actions:`, actionHistory.length);
+  console.log(`📸 Screenshot length:`, screenshot ? screenshot.length : 'missing');
+  console.log(`📸 Screenshot prefix:`, screenshot ? screenshot.substring(0, 50) : 'missing');
+
+  try {
+    // Build context from action history
+    const historyContext = actionHistory.map(a =>
+      `[${new Date(a.timestamp).toLocaleTimeString()}] ${a.action}: ${a.details} at cursor (${a.cursorPosition.x}, ${a.cursorPosition.y})`
+    ).join('\n');
+
+    // Check if user just clicked
+    const recentClick = actionHistory.length > 0 && actionHistory[actionHistory.length - 1].action === 'click';
+    const lastAction = actionHistory.length > 0 ? actionHistory[actionHistory.length - 1] : null;
+
+    // Create AI prompt with emphasis on cursor position and recent clicks
+    const prompt = `You are an AI onboarding coach watching a user learn Google Cloud Platform.
+
+CURRENT TASK (Step ${stepNumber}/${totalSteps}):
+"${currentTask}"
+
+CURRENT PAGE: ${url}
+
+USER'S CURSOR POSITION: (${cursorPosition.x}, ${cursorPosition.y})
+
+${recentClick ? `⚡ USER JUST CLICKED: ${lastAction.details}
+IMPORTANT: Analyze if this click was correct for the current task. Did they click the right element?` : 'User is moving the cursor around.'}
+
+RECENT USER ACTIONS (last 5):
+${historyContext || 'No actions yet'}
+
+SCREENSHOT: [Base64 image provided]
+
+Analyze the screenshot and determine:
+1. Is the user's CURSOR positioned correctly for the current task?
+2. Has the user completed the current task based on what you see?
+3. What should the user do next?
+
+Provide feedback that:
+- EMPHASIZES cursor placement (e.g., "Your cursor is near the menu button - click it!")
+- Gives specific guidance based on what you see
+- Is encouraging and helpful
+- Is concise (max 2 sentences)
+
+IMPORTANT: Respond with ONLY a JSON object, no markdown formatting, no code blocks.
+Format:
+{
+  "taskComplete": true/false,
+  "feedback": "Your feedback message here",
+  "cursorAnalysis": "Where the cursor is and if it's in the right place"
+}`;
+
+    // Use Gemini for vision analysis (using newer Gemini 2.5 Flash)
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      generationConfig: {
+        responseMimeType: "application/json"
+      }
+    });
+
+    // Convert base64 data URL to the format Gemini expects
+    // Extract the base64 data (remove "data:image/jpeg;base64," prefix)
+    const base64Data = screenshot.replace(/^data:image\/\w+;base64,/, '');
+
+    const imagePart = {
+      inlineData: {
+        data: base64Data,
+        mimeType: "image/jpeg"
+      }
+    };
+
+    const result = await model.generateContent([prompt, imagePart]);
+    const aiResponse = result.response.text();
+    console.log('🤖 AI Raw Response:', aiResponse);
+    
+    // Parse JSON response
+    let parsedResponse;
+    try {
+      parsedResponse = JSON.parse(aiResponse);
+    } catch (e) {
+      // If not JSON, create structured response
+      parsedResponse = {
+        taskComplete: aiResponse.toLowerCase().includes('complete') || aiResponse.toLowerCase().includes('done'),
+        feedback: aiResponse.substring(0, 150),
+        cursorAnalysis: 'Analyzing cursor position...'
+      };
+    }
+    
+    console.log('✅ AI Analysis:', parsedResponse);
+    res.json(parsedResponse);
+    
+  } catch (error) {
+    console.error('❌ AI Analysis Error:', error.message);
+    if (error.response) {
+      console.error('❌ Groq API Response:', error.response.status);
+      console.error('❌ Groq API Data:', JSON.stringify(error.response.data, null, 2));
+    }
+    res.status(500).json({
+      taskComplete: false,
+      feedback: '🤖 AI is thinking... Keep going!',
+      error: error.message
+    });
+  }
+});
+
+/*
+================================================================================
 EXTENSION TRACKING & CONFIGURATION ENDPOINTS
 ================================================================================
 */
@@ -784,17 +910,38 @@ app.post('/track/extension-usage', async (req, res) => {
   const { internEmail, event, website, step, timestamp } = req.body;
   
   console.log(`📥 Received tracking event:`, { internEmail, event, website, step });
-  
   console.log(`🤖 Extension event: ${event} for ${internEmail} on ${website}`);
   
-  // Get tracking data
-  const tracking = usageTracking.get(internEmail);
+  // Get tracking data - try exact match first, then case-insensitive
+  let tracking = usageTracking.get(internEmail);
+  
+  // If not found, try case-insensitive search
+  if (!tracking && internEmail) {
+    const lowerEmail = internEmail.toLowerCase();
+    for (const [key, value] of usageTracking.entries()) {
+      if (key.toLowerCase() === lowerEmail) {
+        tracking = value;
+        console.log(`✅ Found tracking data with case-insensitive match: ${key}`);
+        break;
+      }
+    }
+  }
   
   if (!tracking) {
+    console.error(`❌ Intern not found: ${internEmail}`);
+    console.log(`📋 Available interns in tracking:`, Array.from(usageTracking.keys()));
     return res.status(404).json({ 
-      error: 'Intern not found. Please complete onboarding setup first.' 
+      error: 'Intern not found. Please complete onboarding setup first.',
+      availableInterns: Array.from(usageTracking.keys())
     });
   }
+  
+  console.log(`✅ Found tracking data for ${internEmail}`);
+  console.log(`📊 Current state:`, {
+    extensionActivated: tracking.extensionActivated,
+    trainingInProgress: tracking.trainingInProgress,
+    trainingCompleted: tracking.trainingCompleted
+  });
   
   // Log the event
   tracking.extensionEvents = tracking.extensionEvents || [];
@@ -814,9 +961,32 @@ app.post('/track/extension-usage', async (req, res) => {
     console.log(`🔍 Looking for active session for: ${internEmail}`);
     console.log(`📊 Active sessions:`, Array.from(activeSessions.keys()));
     
-    const session = activeSessions.get(internEmail);
+    // Try to find session - exact match first, then case-insensitive
+    let session = activeSessions.get(internEmail);
+    
+    if (!session && internEmail) {
+      const lowerEmail = internEmail.toLowerCase();
+      for (const [key, value] of activeSessions.entries()) {
+        if (key.toLowerCase() === lowerEmail) {
+          session = value;
+          console.log(`✅ Found session with case-insensitive match: ${key}`);
+          break;
+        }
+      }
+    }
+    
+    // Store state for polling (in case SSE is closed)
+    workflowStates.set(internEmail, {
+      step: 'onboarding',
+      status: 'running',
+      message: `${tracking.internName} is completing onboarding tasks...`,
+      extensionActivated: true,
+      trainingInProgress: true,
+      timestamp: new Date()
+    });
+    
     if (session && session.sendProgress) {
-      console.log(`✅ Session found! Sending progress updates...`);
+      console.log(`✅ Session found! Sending progress updates via SSE...`);
       
       // Mark "opened" as completed
       session.sendProgress('opened', 'completed', {
@@ -831,9 +1001,11 @@ app.post('/track/extension-usage', async (req, res) => {
       });
       
       console.log(`✅ Training STARTED for ${internEmail} (0→1)`);
+      console.log(`📤 Sent SSE updates: 'opened' completed, 'onboarding' running`);
     } else {
-      console.error(`❌ No active session found for ${internEmail}`);
-      console.log(`Available sessions: ${Array.from(activeSessions.keys()).join(', ')}`);
+      console.warn(`⚠️ No active SSE session found for ${internEmail}`);
+      console.log(`📋 Available sessions: ${Array.from(activeSessions.keys()).join(', ')}`);
+      console.log(`💾 State saved for polling - frontend can retrieve via /workflow/state/${internEmail}`);
     }
   }
   
@@ -909,6 +1081,40 @@ app.get('/extension/state/:internEmail', async (req, res) => {
       extensionActivated: tracking.extensionActivated,       // 0 or 1
       trainingInProgress: tracking.trainingInProgress,       // 0 or 1
       trainingCompleted: tracking.trainingCompleted,         // 0 or 1
+      firstActivationAt: tracking.firstActivationAt,
+      trainingCompletedAt: tracking.trainingCompletedAt
+    }
+  });
+});
+
+// Get workflow state for polling (when SSE closes)
+app.get('/workflow/state/:internEmail', async (req, res) => {
+  const { internEmail } = req.params;
+  
+  const tracking = usageTracking.get(internEmail);
+  const workflowState = workflowStates.get(internEmail);
+  
+  if (!tracking) {
+    return res.status(404).json({ 
+      error: 'No tracking data found for this intern' 
+    });
+  }
+  
+  // Return the latest workflow state
+  res.json({
+    success: true,
+    internEmail: tracking.internEmail,
+    internName: tracking.internName,
+    workflowState: workflowState || {
+      step: 'opened',
+      status: 'running',
+      message: 'Waiting for extension activation...',
+      timestamp: new Date()
+    },
+    tracking: {
+      extensionActivated: tracking.extensionActivated,
+      trainingInProgress: tracking.trainingInProgress,
+      trainingCompleted: tracking.trainingCompleted,
       firstActivationAt: tracking.firstActivationAt,
       trainingCompletedAt: tracking.trainingCompletedAt
     }

@@ -17,6 +17,9 @@ node_modules/
 npm-debug.log
 yarn-error.log
 
+# Google Cloud credentials
+google-creds.json
+
 # IDEs
 .vscode/
 .idea/

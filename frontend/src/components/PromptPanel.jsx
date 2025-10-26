@@ -15,14 +15,17 @@ export default function PromptPanel({ onSubmit, loading, onInternInfoChange }) {
   const [showExamples, setShowExamples] = useState(true);
 
   const handleSubmit = () => {
-    if (prompt.trim()) {
-      // Pass intern info to parent FIRST before submitting
-      if (onInternInfoChange && internName && internEmail) {
-        onInternInfoChange({ name: internName, email: internEmail });
+    if (prompt.trim() && internName.trim() && internEmail.trim()) {
+      // Create intern info object
+      const internInfo = { name: internName.trim(), email: internEmail.trim() };
+      
+      // Update parent state
+      if (onInternInfoChange) {
+        onInternInfoChange(internInfo);
       }
       
-      // Then submit the prompt
-      onSubmit(prompt);
+      // Pass both prompt AND internInfo to avoid race condition
+      onSubmit(prompt, internInfo);
       setShowExamples(false);
     }
   };

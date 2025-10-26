@@ -30,9 +30,16 @@ const getInitialWorkflow = () => ({
     },
     {
       id: 'opened',
-      name: 'Intern Opening Training',
+      name: 'Waiting for Training Start',
       type: 'learning',
-      description: 'Intern has opened onboarding training materials',
+      description: 'Waiting for intern to open extension',
+      status: 'pending'
+    },
+    {
+      id: 'onboarding',
+      name: 'Completing Tasks',
+      type: 'hands-on',
+      description: 'Intern is completing onboarding tasks',
       status: 'pending'
     },
     {
@@ -47,7 +54,8 @@ const getInitialWorkflow = () => ({
     { from: 'analyzing', to: 'generating', status: 'pending' },
     { from: 'generating', to: 'sending', status: 'pending' },
     { from: 'sending', to: 'opened', status: 'pending' },
-    { from: 'opened', to: 'onboarded', status: 'pending' }
+    { from: 'opened', to: 'onboarding', status: 'pending' },
+    { from: 'onboarding', to: 'onboarded', status: 'pending' }
   ]
 });
 
@@ -60,12 +68,23 @@ export default function OnboardingApp() {
   const [progressMessage, setProgressMessage] = useState('Fill in the form above to start onboarding');
   const [jiraUrl, setJiraUrl] = useState(null);
 
-  const handleGenerateWorkflow = async (prompt) => {
-    if (!internInfo) {
+  const handleGenerateWorkflow = async (prompt, passedInternInfo = null) => {
+    // Use passed intern info if provided, otherwise use state
+    const currentInternInfo = passedInternInfo || internInfo;
+    
+    console.log('🔍 handleGenerateWorkflow called');
+    console.log('  - Passed intern info:', passedInternInfo);
+    console.log('  - State intern info:', internInfo);
+    console.log('  - Using:', currentInternInfo);
+    
+    if (!currentInternInfo || !currentInternInfo.name || !currentInternInfo.email) {
+      console.error('❌ Missing intern info');
       alert('Please provide intern name and email first.');
       return;
     }
 
+    console.log('✅ Starting workflow generation for:', currentInternInfo);
+    
     setCurrentPrompt(prompt);
     setExecuting(true);
     setError(null);
@@ -76,8 +95,10 @@ export default function OnboardingApp() {
     setProgressMessage('Starting onboarding automation...');
 
     try {
-      const result = await executeOnboardingWithProgress(prompt, internInfo, (progressData) => {
-        const { step, status, message, jiraEpicUrl } = progressData;
+      const result = await executeOnboardingWithProgress(prompt, currentInternInfo, (progressData) => {
+        const { step, status, message, jiraEpicUrl, extensionActivated, trainingInProgress } = progressData;
+
+        console.log('📊 SSE Progress Update:', { step, status, message, extensionActivated, trainingInProgress });
 
         setProgressMessage(message || '');
 
@@ -85,20 +106,48 @@ export default function OnboardingApp() {
           setJiraUrl(jiraEpicUrl);
         }
 
-        // Update workflow node status
+        // ISSUE 1 FIX: Stop generating spinner after 'sending' is completed
+        if (step === 'sending' && status === 'completed') {
+          console.log('✅ Sending completed, stopping spinner');
+          setExecuting(false);
+        }
+
+        // ISSUE 2 & 3 FIX: Update workflow node status AND names
         setWorkflow(prev => ({
           ...prev,
           nodes: prev.nodes.map(node => {
             if (node.id === step) {
-              // Special case: when onboarded step completes, update the name
-              if (step === 'onboarded' && status === 'completed') {
-                return { ...node, name: 'Onboarded', status };
+              // Special handling for each step
+              if (step === 'opened' && status === 'running') {
+                // Waiting for extension to open
+                return { ...node, name: 'Waiting for Extension...', status };
+              } else if (step === 'opened' && status === 'completed') {
+                // Intern opened the extension - change name to show they started
+                return { ...node, name: 'Extension Opened ✓', status };
+              } else if (step === 'onboarding' && status === 'running') {
+                // This is the new intermediate step from backend
+                return { 
+                  ...node, 
+                  name: 'Intern Completing Tasks...', 
+                  status 
+                };
+              } else if (step === 'onboarding' && status === 'completed') {
+                // Training tasks completed
+                return { ...node, name: 'Tasks Completed ✓', status };
+              } else if (step === 'onboarded' && status === 'completed') {
+                // Final onboarded state
+                return { ...node, name: 'Fully Onboarded ✓', status };
               }
               return { ...node, status };
             }
             return node;
           }),
           edges: prev.edges.map(edge => {
+            // When a node starts running, highlight the incoming edge
+            if (edge.to === step && status === 'running') {
+              return { ...edge, status: 'running' };
+            }
+            // When a node completes, mark the outgoing edge as completed
             if (edge.from === step && status === 'completed') {
               return { ...edge, status: 'completed' };
             }

@@ -16,12 +16,14 @@ export default function PromptPanel({ onSubmit, loading, onInternInfoChange }) {
 
   const handleSubmit = () => {
     if (prompt.trim()) {
-      onSubmit(prompt);
-      setShowExamples(false);
-      // Pass intern info to parent if callback exists
+      // Pass intern info to parent FIRST before submitting
       if (onInternInfoChange && internName && internEmail) {
         onInternInfoChange({ name: internName, email: internEmail });
       }
+      
+      // Then submit the prompt
+      onSubmit(prompt);
+      setShowExamples(false);
     }
   };
 
@@ -156,7 +158,7 @@ export default function PromptPanel({ onSubmit, loading, onInternInfoChange }) {
 
             <button
               onClick={handleSubmit}
-              disabled={loading || !prompt.trim()}
+              disabled={loading || !prompt.trim() || !internName.trim() || !internEmail.trim()}
               className="px-6 py-2 bg-foreground text-background rounded-lg text-sm font-medium hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {loading ? (

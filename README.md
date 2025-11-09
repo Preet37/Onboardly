@@ -1,4 +1,4 @@
-# Onboardly
+# Onboardly - 🏆 Cal Hacks 12.0 Best Workflow App
 
 AI-powered onboarding platform that uses vision analysis to guide users through complex workflows in real-time.
 
